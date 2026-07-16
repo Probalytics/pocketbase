@@ -188,6 +188,14 @@ type MailerRecordEvent struct {
 	Meta map[string]any
 }
 
+// MailerMarketingEvent is the event data of a marketing email that is
+// about to be sent. Message (from the embedded MailerEvent) is the
+// outgoing email and Record is the queued _mailMessages record.
+type MailerMarketingEvent struct {
+	MailerEvent
+	Record *Record
+}
+
 // -------------------------------------------------------------------
 // Model events data
 // -------------------------------------------------------------------
