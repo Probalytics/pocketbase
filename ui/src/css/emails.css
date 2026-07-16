@@ -1,0 +1,54 @@
+.email-card {
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    padding: var(--smSpacing);
+}
+
+.email-stat {
+    flex: 1 1 120px;
+    text-align: center;
+    padding: var(--smSpacing);
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+}
+.email-stat .email-stat-value {
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+.email-stat .email-stat-label {
+    font-size: var(--smFontSize);
+    color: var(--txtHintColor);
+}
+
+.email-step {
+    border: 1px solid var(--surfaceAlt2Color);
+    border-left: 3px solid var(--primaryColor);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    padding: var(--smSpacing);
+}
+.email-step.email-step-delay {
+    border-left-color: var(--warningColor);
+}
+
+.email-flow-connector {
+    width: 2px;
+    height: 14px;
+    margin: 0 auto;
+    background: var(--surfaceAlt3Color);
+}
+
+.txt-mono {
+    font-family: var(--monospaceFontFamily, ui-monospace, monospace);
+    font-size: 0.85em;
+}
+
+.email-preview-frame {
+    width: 100%;
+    height: 520px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: #fff;
+}

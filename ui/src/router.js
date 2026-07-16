@@ -1,10 +1,17 @@
 import { pageSuperuserLogin } from "@/auth/pageSuperuserLogin";
 import { pageCollections } from "@/collections/pageCollections";
+import { pageAutomation } from "@/emails/pageAutomation";
+import { pageAutomations } from "@/emails/pageAutomations";
+import { pageCampaign } from "@/emails/pageCampaign";
+import { pageCampaigns } from "@/emails/pageCampaigns";
+import { pageSuppressions } from "@/emails/pageSuppressions";
+import { pageTemplates } from "@/emails/pageTemplates";
 import { pageLogs } from "@/logs/pageLogs";
 import { pageApplicationSettings } from "@/settings/application/pageApplicationSettings";
 import { pageBackupsSettings } from "@/settings/backups/pageBackupsSettings";
 import { pageCronsSettings } from "@/settings/crons/pageCronsSettings";
 import { pageMailSettings } from "@/settings/mail/pageMailSettings";
+import { pageMarketingSettings } from "@/settings/marketing/pageMarketingSettings";
 import { pageSQLConsole } from "@/settings/sql/pageSQLConsole";
 import { pageStorageSettings } from "@/settings/storage/pageStorageSettings";
 import { pageExportCollections } from "@/settings/sync/pageExportCollections";
@@ -164,8 +171,15 @@ app.routes.blank("#/auth/oauth2-redirect-failure", async (route) => {
 
 app.routes.superuserOnly("#/collections", pageCollections);
 app.routes.superuserOnly("#/logs", pageLogs);
+app.routes.superuserOnly("#/emails/campaigns", pageCampaigns);
+app.routes.superuserOnly("#/emails/campaigns/{id}", pageCampaign);
+app.routes.superuserOnly("#/emails/automations", pageAutomations);
+app.routes.superuserOnly("#/emails/automations/{id}", pageAutomation);
+app.routes.superuserOnly("#/emails/templates", pageTemplates);
+app.routes.superuserOnly("#/emails/suppressions", pageSuppressions);
 app.routes.superuserOnly("#/settings", pageApplicationSettings);
 app.routes.superuserOnly("#/settings/mail", pageMailSettings);
+app.routes.superuserOnly("#/settings/marketing", pageMarketingSettings);
 app.routes.superuserOnly("#/settings/storage", pageStorageSettings);
 app.routes.superuserOnly("#/settings/backups", pageBackupsSettings);
 app.routes.superuserOnly("#/settings/crons", pageCronsSettings);
