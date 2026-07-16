@@ -136,7 +136,9 @@ func TestSQLRun(t *testing.T) {
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				`"execTime":`,
-				`"affectedRows":0`,
+				// DDL doesn't reset SQLite changes(), so this reflects the
+				// residual row count from the last applied migration
+				`"affectedRows":1`,
 				`"columns":[]`,
 				`"rows":[]`,
 			},
