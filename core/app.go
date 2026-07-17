@@ -1253,6 +1253,9 @@ type App interface {
 	// SendTestEmail delivers a one-off copy of the campaign to the given address.
 	SendTestEmail(campaign *Record, to string, sample *Record) error
 
+	// SendDirectEmail queues and delivers a single ad-hoc email to a contact.
+	SendDirectEmail(to, subject, body string, record *Record) error
+
 	// RenderCampaign resolves a campaign's subject and body for previewing.
 	RenderCampaign(campaign *Record, sample *Record) (subject string, html string)
 

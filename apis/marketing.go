@@ -37,6 +37,37 @@ func bindMarketingApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) 
 	sub.POST("/campaigns/{id}/test", campaignTest).Bind(RequireSuperuserAuth())
 	sub.GET("/campaigns/{id}/preview", campaignPreview).Bind(RequireSuperuserAuth())
 	sub.GET("/audience", audienceCount).Bind(RequireSuperuserAuth())
+
+	sub.POST("/contacts/{collection}/{id}/email", contactEmail).Bind(RequireSuperuserAuth())
+}
+
+func contactEmail(e *core.RequestEvent) error {
+	record, err := e.App.FindRecordById(e.Request.PathValue("collection"), e.Request.PathValue("id"))
+	if err != nil {
+		return e.NotFoundError("Contact not found.", err)
+	}
+
+	to := record.GetString("email")
+	if to == "" {
+		to = record.Email()
+	}
+	if to == "" {
+		return e.BadRequestError("The contact has no email address.", nil)
+	}
+
+	data := struct {
+		Subject string `json:"subject"`
+		Body    string `json:"body"`
+	}{}
+	if err := e.BindBody(&data); err != nil {
+		return e.BadRequestError("Invalid request body.", err)
+	}
+
+	if err := e.App.SendDirectEmail(to, data.Subject, data.Body, record); err != nil {
+		return e.BadRequestError("Failed to send the email.", err)
+	}
+
+	return e.NoContent(http.StatusOK)
 }
 
 func campaignSend(e *core.RequestEvent) error {

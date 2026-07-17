@@ -71,3 +71,19 @@ func (app *BaseApp) RenderCampaign(campaign *Record, sample *Record) (subject st
 	rawSubject, rawBody := app.campaignContent(campaign)
 	return resolveMailContent(app, rawSubject, sample), resolveMailContent(app, rawBody, sample)
 }
+
+// SendDirectEmail queues and immediately delivers a single ad-hoc email to a
+// contact, rendering variables against the given source record.
+func (app *BaseApp) SendDirectEmail(to, subject, body string, record *Record) error {
+	message, err := app.queueMarketingMessage(marketingMessageParams{
+		To:      to,
+		Subject: subject,
+		Body:    body,
+		Record:  record,
+	})
+	if err != nil {
+		return err
+	}
+
+	return app.deliverMarketingMessage(message)
+}
