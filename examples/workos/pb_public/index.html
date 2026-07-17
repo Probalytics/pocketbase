@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #16161a;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #16161a;
+    --accent-text: #ffffff;
+    --danger: #b91c1c;
+    --ok: #047857;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101114;
+      --card: #191b1f;
+      --text: #f4f4f5;
+      --muted: #9ca3af;
+      --line: #2b2e34;
+      --accent: #f4f4f5;
+      --accent-text: #101114;
+      --danger: #f87171;
+      --ok: #34d399;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 36px 32px;
+    box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 8px 32px rgb(0 0 0 / .06);
+  }
+  h1 { font-size: 21px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 6px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 26px; }
+  label { display: block; font-size: 13px; font-weight: 550; margin: 14px 0 6px; }
+  input {
+    width: 100%;
+    padding: 11px 13px;
+    font-size: 15px;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color .12s;
+  }
+  input:focus { border-color: var(--muted); }
+  button {
+    width: 100%;
+    margin-top: 16px;
+    padding: 11px 13px;
+    font-size: 15px;
+    font-weight: 570;
+    border: 0;
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--accent-text);
+    cursor: pointer;
+    transition: opacity .12s;
+  }
+  button:hover { opacity: .88; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+  .row { display: flex; gap: 10px; }
+  .row > button { flex: 1; }
+  .sep {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 12px;
+    margin: 20px 0 4px;
+  }
+  .sep::before, .sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .msg { margin-top: 14px; font-size: 13.5px; display: none; }
+  .msg.err { color: var(--danger); display: block; }
+  .msg.ok { color: var(--ok); display: block; }
+  .links { margin-top: 20px; text-align: center; font-size: 13.5px; color: var(--muted); }
+  .links a { color: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .hidden { display: none !important; }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    vertical-align: -2px;
+    margin-right: 7px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .profile { text-align: center; }
+  .avatar {
+    width: 64px; height: 64px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    background: var(--line);
+    display: grid;
+    place-items: center;
+    font-size: 24px;
+    font-weight: 600;
+    overflow: hidden;
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .tag {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 3px 10px;
+    font-size: 12px;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    color: var(--muted);
+  }
+  .kv { text-align: left; margin-top: 22px; font-size: 13px; border-top: 1px solid var(--line); }
+  .kv div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .kv span:first-child { color: var(--muted); }
+  .kv span:last-child { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; text-align: right; }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- step: email -->
+  <div id="step-email">
+    <h1>Sign in</h1>
+    <p class="sub">Use your work or personal email to continue.</p>
+    <form onsubmit="return continueWithEmail(event)">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@company.com" required autofocus>
+      <button id="continueBtn" type="submit">Continue</button>
+    </form>
+    <div class="sep">or continue with</div>
+    <div class="row">
+      <button class="ghost" onclick="social('GoogleOAuth')">Google</button>
+      <button class="ghost" onclick="social('MicrosoftOAuth')">Microsoft</button>
+      <button class="ghost" onclick="social('GitHubOAuth')">GitHub</button>
+    </div>
+    <div id="msg-email" class="msg"></div>
+  </div>
+
+  <!-- step: password / code -->
+  <div id="step-local" class="hidden">
+    <h1 id="localTitle">Welcome back</h1>
+    <p class="sub" id="localSub"></p>
+    <form onsubmit="return signInWithPassword(event)">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+    <div class="sep">or</div>
+    <button class="ghost" onclick="sendCode()">Email me a one-time code</button>
+    <div id="msg-local" class="msg"></div>
+    <div class="links">
+      <a onclick="resetPassword()">Forgot password?</a> &nbsp;·&nbsp;
+      <a onclick="showSignup()">Create account</a> &nbsp;·&nbsp;
+      <a onclick="back()">Back</a>
+    </div>
+  </div>
+
+  <!-- step: one-time code -->
+  <div id="step-code" class="hidden">
+    <h1>Check your email</h1>
+    <p class="sub" id="codeSub">Enter the 6-digit code we sent you.</p>
+    <form onsubmit="return confirmCode(event)">
+      <label for="code">One-time code</label>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required>
+      <button type="submit">Verify &amp; sign in</button>
+    </form>
+    <div id="msg-code" class="msg"></div>
+    <div class="links"><a onclick="back()">Back</a></div>
+  </div>
+
+  <!-- step: TOTP MFA -->
+  <div id="step-mfa" class="hidden">
+    <h1>Two-step verification</h1>
+    <p class="sub">Enter the code from your authenticator app.</p>
+    <form onsubmit="return confirmMFA(event)">
+      <label for="totp">Authenticator code</label>
+      <input id="totp" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required>
+      <button type="submit">Verify</button>
+    </form>
+    <div id="msg-mfa" class="msg"></div>
+    <div class="links"><a onclick="back()">Back</a></div>
+  </div>
+
+  <!-- step: signup -->
+  <div id="step-signup" class="hidden">
+    <h1>Create your account</h1>
+    <p class="sub" id="signupSub"></p>
+    <form onsubmit="return signup(event)">
+      <label for="newPassword">Choose a password</label>
+      <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+      <button type="submit">Create account</button>
+    </form>
+    <div id="msg-signup" class="msg"></div>
+    <div class="links"><a onclick="back()">Back</a></div>
+  </div>
+
+  <!-- step: signed in -->
+  <div id="step-profile" class="hidden profile">
+    <div class="avatar" id="avatar"></div>
+    <h1 id="profileName"></h1>
+    <p class="sub" id="profileEmail"></p>
+    <span class="tag hidden" id="orgTag"></span>
+    <div class="kv" id="profileMeta"></div>
+    <button onclick="logout()" style="margin-top:22px">Sign out</button>
+  </div>
+
+</div>
+
+<script>
+const API = "";                 // same origin
+const COLLECTION = "users";
+const $ = (id) => document.getElementById(id);
+const steps = ["step-email", "step-local", "step-code", "step-mfa", "step-signup", "step-profile"];
+
+let ctx = {
+  email: sessionStorage.getItem("wa_email") || "",
+  otpId: null,
+  mfaId: null,
+  factorId: null,
+};
+
+function show(step) {
+  steps.forEach((s) => $(s).classList.toggle("hidden", s !== step));
+  document.querySelectorAll(".msg").forEach((m) => (m.className = "msg"));
+}
+function msg(id, text, kind) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = "msg " + (kind || "err");
+}
+function busy(form, on) {
+  form.querySelectorAll("button").forEach((b) => (b.disabled = on));
+}
+function back() { show("step-email"); }
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    method: opts.method || "POST",
+    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (_) {}
+  return { status: res.status, data };
+}
+
+function saveAuth(data) {
+  localStorage.setItem("wa_token", data.token);
+  localStorage.setItem("wa_record", JSON.stringify(data.record));
+  renderProfile(data.record, data.meta);
+}
+
+// ---------------------------------------------------------------------
+// 1) email-first: ask the server how this email should authenticate
+// ---------------------------------------------------------------------
+async function continueWithEmail(ev) {
+  ev.preventDefault();
+  const form = ev.target;
+  ctx.email = $("email").value.trim().toLowerCase();
+  sessionStorage.setItem("wa_email", ctx.email);
+  busy(form, true);
+
+  const { status, data } = await api(`/api/collections/${COLLECTION}/auth-with-workos`, {
+    body: { email: ctx.email },
+  });
+
+  busy(form, false);
+
+  if (status === 200 && data && data.authURL) {
+    // enterprise SSO: send the user to their organization's identity provider
+    sessionStorage.setItem("wa_state", data.state);
+    sessionStorage.setItem("wa_verifier", data.codeVerifier || "");
+    location.href = data.authURL + encodeURIComponent(location.origin + location.pathname);
+    return false;
+  }
+
+  // consumer: password / one-time code
+  $("localSub").textContent = ctx.email;
+  show("step-local");
+  $("password").focus();
+  return false;
+}
+
+// ---------------------------------------------------------------------
+// 2) password (+ optional TOTP MFA step-up)
+// ---------------------------------------------------------------------
+async function signInWithPassword(ev) {
+  ev.preventDefault();
+  const form = ev.target;
+  busy(form, true);
+
+  const { status, data } = await api(`/api/collections/${COLLECTION}/auth-with-password`, {
+    body: { identity: ctx.email, password: $("password").value },
+  });
+
+  busy(form, false);
+
+  if (status === 200) { saveAuth(data); return false; }
+
+  if (status === 401 && data && data.mfaId) {
+    ctx.mfaId = data.mfaId;
+    ctx.factorId = (data.factors && data.factors[0] && data.factors[0].id) || "";
+    show("step-mfa");
+    $("totp").focus();
+    return false;
+  }
+
+  msg("msg-local", "That didn’t work. Check your email and password and try again.");
+  return false;
+}
+
+async function confirmMFA(ev) {
+  ev.preventDefault();
+  const form = ev.target;
+  busy(form, true);
+
+  const { status, data } = await api(`/api/collections/${COLLECTION}/auth-with-mfa`, {
+    body: { mfaId: ctx.mfaId, factorId: ctx.factorId, code: $("totp").value.trim() },
+  });
+
+  busy(form, false);
+  if (status === 200) { saveAuth(data); return false; }
+  msg("msg-mfa", "Invalid code, please try again.");
+  return false;
+}
+
+// ---------------------------------------------------------------------
+// 3) one-time email code (magic auth)
+// ---------------------------------------------------------------------
+async function sendCode() {
+  const { status, data } = await api(`/api/collections/${COLLECTION}/request-otp`, {
+    body: { email: ctx.email },
+  });
+
+  if (status === 200 && data && data.otpId) {
+    ctx.otpId = data.otpId;
+    $("codeSub").textContent = `Enter the 6-digit code we sent to ${ctx.email}.`;
+    show("step-code");
+    $("code").focus();
+  } else {
+    msg("msg-local", "Couldn’t send a code right now, please try again shortly.");
+  }
+}
+
+async function confirmCode(ev) {
+  ev.preventDefault();
+  const form = ev.target;
+  busy(form, true);
+
+  const { status, data } = await api(`/api/collections/${COLLECTION}/auth-with-otp`, {
+    body: { otpId: ctx.otpId, password: $("code").value.trim() },
+  });
+
+  busy(form, false);
+  if (status === 200) { saveAuth(data); return false; }
+  msg("msg-code", "Invalid or expired code. You can go back and request a new one.");
+  return false;
+}
+
+// ---------------------------------------------------------------------
+// 4) social sign-in (via WorkOS)
+// ---------------------------------------------------------------------
+async function social(provider) {
+  const { status, data } = await api(`/api/collections/${COLLECTION}/auth-with-workos`, {
+    body: { provider },
+  });
+
+  if (status === 200 && data && data.authURL) {
+    sessionStorage.setItem("wa_state", data.state);
+    sessionStorage.setItem("wa_verifier", data.codeVerifier || "");
+    location.href = data.authURL + encodeURIComponent(location.origin + location.pathname);
+  } else {
+    msg("msg-email", "Social sign-in is not available right now.");
+  }
+}
+
+// OAuth2 callback: ?code=...&state=...
+async function handleCallback() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  if (!code) return false;
+
+  history.replaceState({}, "", location.pathname);
+
+  const state = params.get("state");
+  if (state && state !== sessionStorage.getItem("wa_state")) {
+    msg("msg-email", "Sign-in session expired, please try again.");
+    return false;
+  }
+
+  const { status, data } = await api(`/api/collections/${COLLECTION}/auth-with-oauth2`, {
+    body: {
+      provider: "workos",
+      code,
+      codeVerifier: sessionStorage.getItem("wa_verifier") || "",
+      redirectURL: location.origin + location.pathname,
+    },
+  });
+
+  if (status === 200) { saveAuth(data); return true; }
+  msg("msg-email", "Sign-in failed, please try again.");
+  return false;
+}
+
+// ---------------------------------------------------------------------
+// 5) signup + password reset
+// ---------------------------------------------------------------------
+function showSignup() {
+  $("signupSub").textContent = ctx.email;
+  show("step-signup");
+  $("newPassword").focus();
+}
+
+async function signup(ev) {
+  ev.preventDefault();
+  const form = ev.target;
+  const password = $("newPassword").value;
+  busy(form, true);
+
+  const create = await api(`/api/collections/${COLLECTION}/records`, {
+    body: { email: ctx.email, password, passwordConfirm: password },
+  });
+
+  if (create.status !== 200) {
+    busy(form, false);
+    msg("msg-signup", "Couldn’t create the account. It may already exist — try signing in instead.");
+    return false;
+  }
+
+  const { status, data } = await api(`/api/collections/${COLLECTION}/auth-with-password`, {
+    body: { identity: ctx.email, password },
+  });
+
+  busy(form, false);
+  if (status === 200) { saveAuth(data); return false; }
+  show("step-local");
+  return false;
+}
+
+async function resetPassword() {
+  await api(`/api/collections/${COLLECTION}/request-password-reset`, { body: { email: ctx.email } });
+  msg("msg-local", "If an account exists for that email, a reset link is on its way.", "ok");
+}
+
+// ---------------------------------------------------------------------
+// 6) profile
+// ---------------------------------------------------------------------
+function renderProfile(record, meta) {
+  const name = record.name || record.email.split("@")[0];
+  $("profileName").textContent = name;
+  $("profileEmail").textContent = record.email;
+  $("avatar").textContent = name.slice(0, 1).toUpperCase();
+
+  const org = record.organization || (meta && meta.workos && meta.workos.organizationId);
+  $("orgTag").classList.toggle("hidden", !org);
+  if (org) $("orgTag").textContent = "organization member";
+
+  $("profileMeta").innerHTML = "";
+  const rows = { id: record.id, verified: String(record.verified), collection: record.collectionName };
+  if (record.organization) rows.organization = record.organization;
+  for (const [k, v] of Object.entries(rows)) {
+    const div = document.createElement("div");
+    const kEl = document.createElement("span"); kEl.textContent = k;
+    const vEl = document.createElement("span"); vEl.textContent = v;
+    div.append(kEl, vEl);
+    $("profileMeta").append(div);
+  }
+
+  show("step-profile");
+}
+
+function logout() {
+  localStorage.removeItem("wa_token");
+  localStorage.removeItem("wa_record");
+  sessionStorage.clear();
+  ctx = { email: "", otpId: null, mfaId: null, factorId: null };
+  $("email").value = "";
+  show("step-email");
+}
+
+// boot
+(async () => {
+  if (await handleCallback()) return;
+
+  const record = localStorage.getItem("wa_record");
+  if (record && localStorage.getItem("wa_token")) {
+    renderProfile(JSON.parse(record), null);
+  } else if (ctx.email) {
+    $("email").value = ctx.email;
+  }
+})();
+</script>
+</body>
+</html>
