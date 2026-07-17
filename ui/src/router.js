@@ -4,6 +4,7 @@ import { pageAutomation } from "@/emails/pageAutomation";
 import { pageAutomations } from "@/emails/pageAutomations";
 import { pageCampaign } from "@/emails/pageCampaign";
 import { pageCampaigns } from "@/emails/pageCampaigns";
+import { pageContacts } from "@/emails/pageContacts";
 import { pageSuppressions } from "@/emails/pageSuppressions";
 import { pageTemplates } from "@/emails/pageTemplates";
 import { pageLogs } from "@/logs/pageLogs";
@@ -171,12 +172,13 @@ app.routes.blank("#/auth/oauth2-redirect-failure", async (route) => {
 
 app.routes.superuserOnly("#/collections", pageCollections);
 app.routes.superuserOnly("#/logs", pageLogs);
-app.routes.superuserOnly("#/emails/campaigns", pageCampaigns);
-app.routes.superuserOnly("#/emails/campaigns/{id}", pageCampaign);
-app.routes.superuserOnly("#/emails/automations", pageAutomations);
-app.routes.superuserOnly("#/emails/automations/{id}", pageAutomation);
-app.routes.superuserOnly("#/emails/templates", pageTemplates);
-app.routes.superuserOnly("#/emails/suppressions", pageSuppressions);
+app.routes.superuserOnly("#/crm/contacts", pageContacts);
+app.routes.superuserOnly("#/crm/campaigns", pageCampaigns);
+app.routes.superuserOnly("#/crm/campaigns/{id}", pageCampaign);
+app.routes.superuserOnly("#/crm/automations", pageAutomations);
+app.routes.superuserOnly("#/crm/automations/{id}", pageAutomation);
+app.routes.superuserOnly("#/crm/templates", pageTemplates);
+app.routes.superuserOnly("#/crm/suppressions", pageSuppressions);
 app.routes.superuserOnly("#/settings", pageApplicationSettings);
 app.routes.superuserOnly("#/settings/mail", pageMailSettings);
 app.routes.superuserOnly("#/settings/marketing", pageMarketingSettings);

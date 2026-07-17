@@ -30,7 +30,7 @@ export function pageAutomations() {
     }
 
     const newButton = t.a(
-        { className: "btn expanded", href: "#/emails/automations/new" },
+        { className: "btn expanded", href: "#/crm/automations/new" },
         t.i({ className: "ri-add-line" }),
         t.span({ className: "txt" }, "New automation"),
     );
@@ -58,7 +58,7 @@ export function pageAutomations() {
                         t.td(
                             null,
                             t.a(
-                                { className: "txt-bold", href: "#/emails/automations/" + automation.id },
+                                { className: "txt-bold", href: "#/crm/automations/" + automation.id },
                                 automation.name || "(untitled)",
                             ),
                         ),
@@ -78,7 +78,7 @@ export function pageAutomations() {
                             t.a(
                                 {
                                     className: "btn sm transparent secondary",
-                                    href: "#/emails/automations/" + automation.id,
+                                    href: "#/crm/automations/" + automation.id,
                                 },
                                 t.span({ className: "txt" }, "Edit"),
                             ),

@@ -63,10 +63,10 @@ window.app.store = store({
             label: "Collections",
         },
         {
-            href: "#/emails/campaigns",
-            icon: "ri-mail-send-line",
-            label: "Emails",
-            isActive: () => app.utils.isActivePath("#/emails", false),
+            href: "#/crm/contacts",
+            icon: "ri-contacts-book-2-line",
+            label: "CRM",
+            isActive: () => app.utils.isActivePath("#/crm", false),
         },
         {
             href: "#/logs",

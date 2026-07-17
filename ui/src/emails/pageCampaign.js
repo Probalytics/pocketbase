@@ -64,7 +64,7 @@ export function pageCampaign(route) {
                 : await app.pb.collection(COLLECTION).create(payload);
 
             if (isNew && data.campaign.id) {
-                window.history.replaceState(null, "", "#/emails/campaigns/" + data.campaign.id);
+                window.history.replaceState(null, "", "#/crm/campaigns/" + data.campaign.id);
             }
             if (!silent) app.toasts.success("Campaign saved.");
         } catch (err) {
@@ -131,7 +131,7 @@ export function pageCampaign(route) {
         app.store.collections.filter((c) => !c.system && (c.type === "auth" || c.type === "base"));
 
     return emailsLayout(
-        [{ label: "Campaigns", href: "#/emails/campaigns" }, { label: () => app.store.title }],
+        [{ label: "Campaigns", href: "#/crm/campaigns" }, { label: () => app.store.title }],
         () => {
             if (data.isLoading) {
                 return t.div({ className: "block txt-center" }, t.span({ className: "loader lg" }));

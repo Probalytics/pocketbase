@@ -53,7 +53,7 @@ export function pageAutomation(route) {
             data.automation.steps = Array.isArray(data.automation.steps) ? data.automation.steps : [];
 
             app.toasts.success("Automation saved.");
-            if (isNew) window.location.hash = "#/emails/automations/" + data.automation.id;
+            if (isNew) window.location.hash = "#/crm/automations/" + data.automation.id;
         } catch (err) {
             app.checkApiError(err);
         }
@@ -82,7 +82,7 @@ export function pageAutomation(route) {
         app.store.collections.filter((c) => !c.system && (c.type === "auth" || c.type === "base"));
 
     return emailsLayout(
-        [{ label: "Automations", href: "#/emails/automations" }, { label: () => app.store.title }],
+        [{ label: "Automations", href: "#/crm/automations" }, { label: () => app.store.title }],
         () => {
             if (data.isLoading) {
                 return t.div({ className: "block txt-center" }, t.span({ className: "loader lg" }));

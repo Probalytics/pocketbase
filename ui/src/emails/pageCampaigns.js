@@ -21,7 +21,7 @@ export function pageCampaigns() {
     }
 
     const newButton = t.a(
-        { className: "btn expanded", href: "#/emails/campaigns/new" },
+        { className: "btn expanded", href: "#/crm/campaigns/new" },
         t.i({ className: "ri-add-line" }),
         t.span({ className: "txt" }, "New campaign"),
     );
@@ -60,7 +60,7 @@ export function pageCampaigns() {
                         {
                             className: "row-handle",
                             tabIndex: 0,
-                            onclick: () => (window.location.hash = "#/emails/campaigns/" + campaign.id),
+                            onclick: () => (window.location.hash = "#/crm/campaigns/" + campaign.id),
                         },
                         t.td(null, t.strong(null, campaign.name || "(untitled)")),
                         t.td(null, statusLabel(campaign.status)),
