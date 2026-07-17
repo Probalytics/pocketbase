@@ -55,6 +55,10 @@
 
 /* ---- CRM contacts ---- */
 
+.page-contacts .contacts-collection-select {
+    min-width: 170px;
+}
+
 .contact-avatar {
     display: inline-flex;
     align-items: center;
