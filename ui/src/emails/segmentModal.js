@@ -1,3 +1,5 @@
+import { filterField } from "./filterEditor";
+
 window.app = window.app || {};
 window.app.modals = window.app.modals || {};
 
@@ -85,14 +87,13 @@ function segmentModal(segment, onSaved) {
                             data.membersCount = null;
                         },
                     }))),
-                cell(field("Filter", () =>
-                    t.textarea({
-                        rows: 3,
-                        className: "txt-mono",
-                        placeholder: "plan='pro' && verified=true",
-                        value: () => data.record.filter || "",
-                        oninput: (e) => (data.record.filter = e.target.value),
-                    }))),
+                cell(filterField(
+                    "Filter",
+                    () => data.record.collection,
+                    () => data.record.filter || "",
+                    (val) => (data.record.filter = val),
+                    "plan='pro' && verified=true",
+                )),
                 cell(t.div(
                     { className: "flex gap-10" },
                     t.button(
@@ -108,6 +109,19 @@ function segmentModal(segment, onSaved) {
                         data.membersCount !== null
                             ? t.strong({ className: "txt-nowrap" }, `${data.membersCount} members`)
                             : t.span(null, ""),
+                    t.button(
+                        {
+                            type: "button",
+                            className: "btn sm secondary transparent m-l-auto",
+                            disabled: () => !data.record.collection,
+                            onclick: () => {
+                                app.modals.close();
+                                window.location.hash = audiencePreviewHash(data.record);
+                            },
+                        },
+                        t.i({ className: "ri-eye-line" }),
+                        t.span({ className: "txt" }, "Preview members"),
+                    ),
                 )),
             ),
         ),
@@ -123,6 +137,11 @@ function segmentModal(segment, onSaved) {
             ),
         ),
     );
+}
+
+export function audiencePreviewHash(segment) {
+    return "#/crm/contacts?collection=" + encodeURIComponent(segment.collection)
+        + "&filter=" + encodeURIComponent(segment.filter || "");
 }
 
 function cell(control) {

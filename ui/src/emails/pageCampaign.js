@@ -1,4 +1,5 @@
 import { emailsLayout, statusLabel } from "./emailsLayout";
+import { filterField } from "./filterEditor";
 import { bodyEditor } from "./richEditor";
 
 const COLLECTION = "_mailCampaigns";
@@ -223,15 +224,13 @@ export function pageCampaign(route) {
                         },
                     }))),
             () =>
-                data.campaign.segment ? undefined : cell(field("Filter (optional)", () =>
-                    t.textarea({
-                        rows: 3,
-                        className: "txt-mono",
-                        placeholder: "status='active'",
-                        disabled: () => !data.isEditable,
-                        value: () => data.campaign.audienceFilter || "",
-                        oninput: (e) => (data.campaign.audienceFilter = e.target.value),
-                    }))),
+                data.campaign.segment ? undefined : cell(filterField(
+                    "Filter (optional)",
+                    () => data.campaign.audienceCollection,
+                    () => data.campaign.audienceFilter || "",
+                    (val) => (data.campaign.audienceFilter = val),
+                    "status='active'",
+                )),
             cell(t.div(
                 { className: "flex gap-10" },
                 t.button(

@@ -1,4 +1,5 @@
 import { emailsLayout } from "./emailsLayout";
+import { filterField } from "./filterEditor";
 
 const COLLECTION = "_mailAutomations";
 
@@ -134,22 +135,20 @@ export function pageAutomation(route) {
                     value: () => data.automation.triggerEvent || "create",
                     onchange: (s) => (data.automation.triggerEvent = s?.[0]?.value || "create"),
                 }))),
-            cell(field("Trigger condition (optional)", () =>
-                t.textarea({
-                    rows: 2,
-                    className: "txt-mono",
-                    placeholder: "plan='pro'",
-                    value: () => data.automation.triggerCondition || "",
-                    oninput: (e) => (data.automation.triggerCondition = e.target.value),
-                }))),
-            cell(field("Exit condition (optional)", () =>
-                t.textarea({
-                    rows: 2,
-                    className: "txt-mono",
-                    placeholder: "unsubscribed=true — stops the pipeline early",
-                    value: () => data.automation.exitCondition || "",
-                    oninput: (e) => (data.automation.exitCondition = e.target.value),
-                }))),
+            cell(filterField(
+                "Trigger condition (optional)",
+                () => data.automation.triggerCollection,
+                () => data.automation.triggerCondition || "",
+                (val) => (data.automation.triggerCondition = val),
+                "plan='pro'",
+            )),
+            cell(filterField(
+                "Exit condition (optional)",
+                () => data.automation.triggerCollection,
+                () => data.automation.exitCondition || "",
+                (val) => (data.automation.exitCondition = val),
+                "unsubscribed=true — stops the pipeline early",
+            )),
         ];
     }
 

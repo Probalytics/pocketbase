@@ -3,12 +3,15 @@ import { emailsSidebar } from "./emailsSidebar";
 
 const STORAGE_KEY = "pbCrmContactsCollection";
 
-export function pageContacts() {
+export function pageContacts(route) {
     app.store.title = "Contacts";
+
+    const queryCollection = route?.query?.collection?.[0] || "";
+    const queryFilter = route?.query?.filter?.[0] || "";
 
     const data = store({
         collectionName: "",
-        filter: "",
+        filter: queryFilter,
         sort: "",
         reset: null,
         get collection() {
@@ -26,7 +29,8 @@ export function pageContacts() {
     function initCollection() {
         const available = contactCollections();
         const stored = window.localStorage.getItem(STORAGE_KEY);
-        data.collectionName = available.find((c) => c.name === stored)?.name
+        data.collectionName = available.find((c) => c.name === queryCollection)?.name
+            || available.find((c) => c.name === stored)?.name
             || available.find((c) => c.type === "auth")?.name
             || available[0]?.name
             || "";

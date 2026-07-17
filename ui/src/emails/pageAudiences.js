@@ -1,5 +1,5 @@
 import { emailsListLayout } from "./emailsLayout";
-import "./segmentModal";
+import { audiencePreviewHash } from "./segmentModal";
 
 export function pageAudiences() {
     app.store.title = "Audiences";
@@ -86,6 +86,15 @@ export function pageAudiences() {
                         t.td(null, () => `${data.counts[segment.id] ?? "…"}`),
                         t.td(
                             { className: "txt-right" },
+                            t.a(
+                                {
+                                    className: "btn sm secondary transparent",
+                                    href: audiencePreviewHash(segment),
+                                    onclick: (e) => e.stopPropagation(),
+                                },
+                                t.i({ className: "ri-eye-line" }),
+                                t.span({ className: "txt" }, "Preview"),
+                            ),
                             t.button(
                                 {
                                     type: "button",
