@@ -138,6 +138,16 @@ type AuthenticationFactor struct {
 	Type string `json:"type"` // "totp" or "sms"
 }
 
+// Challenge represents a WorkOS MFA authentication factor challenge
+// (SDK: pkg/mfa.Challenge).
+type Challenge struct {
+	Id        string `json:"id"`
+	FactorId  string `json:"authentication_factor_id"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 // -------------------------------------------------------------------
 // Errors
 // -------------------------------------------------------------------
@@ -311,6 +321,23 @@ func (c *Client) AuthenticateWithTOTP(ctx context.Context, code string, pendingA
 	body["authentication_challenge_id"] = challengeId
 
 	return c.authenticate(ctx, body)
+}
+
+// ChallengeFactor initiates an authentication challenge for the specified
+// MFA factor (POST /auth/factors/{id}/challenge; SDK: pkg/mfa).
+//
+// The returned challenge id is then passed to [Client.AuthenticateWithTOTP]
+// together with the pending authentication token from the preceding
+// "mfa_challenge" [APIError].
+func (c *Client) ChallengeFactor(ctx context.Context, factorId string) (*Challenge, error) {
+	result := &Challenge{}
+
+	err := c.send(ctx, http.MethodPost, "/auth/factors/"+url.PathEscape(factorId)+"/challenge", nil, map[string]any{}, result, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // AuthenticateWithRefreshToken exchanges a refresh token for a new

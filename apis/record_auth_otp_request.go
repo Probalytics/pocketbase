@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/ozzo-validation/v4/is"
@@ -20,7 +21,11 @@ func recordRequestOTP(e *core.RequestEvent) error {
 		return err
 	}
 
-	if !collection.OTP.Enabled {
+	// OTP auth is implicitly available for WorkOS delegated collections
+	// (via the WorkOS Magic Auth one-time codes)
+	isWorkOSDelegated := workosDelegated(e.App, collection)
+
+	if !collection.OTP.Enabled && !isWorkOSDelegated {
 		return e.ForbiddenError("The collection is not configured to allow OTP authentication.", nil)
 	}
 
@@ -30,6 +35,11 @@ func recordRequestOTP(e *core.RequestEvent) error {
 	}
 	if err = form.validate(); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while validating the submitted data.", err))
+	}
+
+	// delegate to WorkOS Magic Auth
+	if isWorkOSDelegated {
+		return workosRequestOTP(e, form.Email)
 	}
 
 	record, err := e.App.FindAuthRecordByEmail(collection, form.Email)
@@ -112,6 +122,46 @@ func recordRequestOTP(e *core.RequestEvent) error {
 			return e.JSON(http.StatusOK, map[string]string{"otpId": otp.Id})
 		})
 	})
+}
+
+const (
+	// workosMagicAuthStoreKeyPrefix is the app store key prefix under which
+	// the email of a pending WorkOS Magic Auth request is stored (suffixed
+	// with the generated otpId).
+	workosMagicAuthStoreKeyPrefix = "@workosMagicAuth_"
+
+	// workosMagicAuthDuration is how long a pending WorkOS Magic Auth
+	// otpId is kept in the app store (matching the WorkOS Magic Auth
+	// codes ~10min validity).
+	workosMagicAuthDuration = 10 * time.Minute
+)
+
+// workosRequestOTP creates (and emails) a WorkOS Magic Auth one-time code
+// and responds with the standard {"otpId": ...} payload.
+//
+// The generated otpId is mapped in-memory to the submitted email and is
+// resolved back during the auth-with-otp code exchange.
+func workosRequestOTP(e *core.RequestEvent, email string) error {
+	otpId := core.GenerateDefaultRandomId()
+
+	_, err := workosClientFromApp(e.App).CreateMagicAuth(e.Request.Context(), email)
+	if err != nil {
+		// write a dummy 200 response as a very rudimentary emails
+		// enumeration "protection" (mirroring the native handler)
+		e.App.Logger().Error("Failed to create WorkOS Magic Auth code", "error", err, "email", email)
+
+		return e.JSON(http.StatusOK, map[string]string{"otpId": otpId})
+	}
+
+	app := e.App
+	storeKey := workosMagicAuthStoreKeyPrefix + otpId
+
+	app.Store().Set(storeKey, email)
+	time.AfterFunc(workosMagicAuthDuration, func() {
+		app.Store().Remove(storeKey)
+	})
+
+	return e.JSON(http.StatusOK, map[string]string{"otpId": otpId})
 }
 
 // -------------------------------------------------------------------

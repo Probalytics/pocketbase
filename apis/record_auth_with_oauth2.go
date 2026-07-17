@@ -33,7 +33,10 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 		return err
 	}
 
-	if !collection.OAuth2.Enabled {
+	// the "workos" provider is implicitly available for WorkOS delegated collections
+	isWorkOSDelegated := workosDelegated(e.App, collection)
+
+	if !collection.OAuth2.Enabled && !isWorkOSDelegated {
 		return e.ForbiddenError("The collection is not configured to allow OAuth2 authentication.", nil)
 	}
 
@@ -46,6 +49,7 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 
 	form := new(recordOAuth2LoginForm)
 	form.collection = collection
+	form.workosDelegated = isWorkOSDelegated
 	if err = e.BindBody(form); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
 	}
@@ -62,8 +66,18 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 	// exchange token for OAuth2 user info and locate existing ExternalAuth rel
 	// ---------------------------------------------------------------
 
+	// when the collection OAuth2 options are disabled only the
+	// implicit WorkOS delegated "workos" provider is allowed
+	if !collection.OAuth2.Enabled && form.Provider != auth.NameWorkOS {
+		return e.ForbiddenError("The collection is not configured to allow OAuth2 authentication.", nil)
+	}
+
 	// load provider configuration
 	providerConfig, ok := collection.OAuth2.GetProviderConfig(form.Provider)
+	if !ok && form.Provider == auth.NameWorkOS && isWorkOSDelegated {
+		// fallback to a provider config synthesized from the app WorkOS settings
+		providerConfig, ok = workosProviderConfig(e.App), true
+	}
 	if !ok {
 		return e.InternalServerError("Missing or invalid provider config.", nil)
 	}
@@ -177,6 +191,10 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 type recordOAuth2LoginForm struct {
 	collection *core.Collection
 
+	// workosDelegated indicates whether the collection auth flows are
+	// delegated to WorkOS (i.e. the "workos" provider is implicitly available).
+	workosDelegated bool
+
 	// Additional data that will be used for creating a new auth record
 	// if an existing OAuth2 account doesn't exist.
 	CreateData map[string]any `form:"createData" json:"createData"`
@@ -210,7 +228,7 @@ func (form *recordOAuth2LoginForm) checkProviderName(value any) error {
 	name, _ := value.(string)
 
 	_, ok := form.collection.OAuth2.GetProviderConfig(name)
-	if !ok {
+	if !ok && !(form.workosDelegated && name == auth.NameWorkOS) {
 		return validation.NewError("validation_invalid_provider", "Provider with name {{.name}} is missing or is not enabled.").
 			SetParams(map[string]any{"name": name})
 	}

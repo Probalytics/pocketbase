@@ -19,7 +19,10 @@ func recordRequestPasswordReset(e *core.RequestEvent) error {
 		return err
 	}
 
-	if !collection.PasswordAuth.Enabled {
+	// password auth is implicitly available for WorkOS delegated collections
+	isWorkOSDelegated := workosDelegated(e.App, collection)
+
+	if !collection.PasswordAuth.Enabled && !isWorkOSDelegated {
 		return e.BadRequestError("The collection is not configured to allow password authentication.", nil)
 	}
 
@@ -29,6 +32,17 @@ func recordRequestPasswordReset(e *core.RequestEvent) error {
 	}
 	if err = form.validate(); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while validating the submitted data.", err))
+	}
+
+	// delegate to WorkOS (it emails the password reset link/token
+	// according to the WorkOS dashboard configuration)
+	if isWorkOSDelegated {
+		if _, err = workosClientFromApp(e.App).CreatePasswordReset(e.Request.Context(), form.Email); err != nil {
+			// don't reveal the failure (and whether the email exists) to the client
+			e.App.Logger().Error("Failed to create WorkOS password reset", "error", err, "email", form.Email)
+		}
+
+		return e.NoContent(http.StatusNoContent)
 	}
 
 	record, err := e.App.FindAuthRecordByEmail(collection, form.Email)

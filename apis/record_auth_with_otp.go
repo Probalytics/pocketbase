@@ -14,7 +14,11 @@ func recordAuthWithOTP(e *core.RequestEvent) error {
 		return err
 	}
 
-	if !collection.OTP.Enabled {
+	// OTP auth is implicitly available for WorkOS delegated collections
+	// (via the WorkOS Magic Auth one-time codes)
+	isWorkOSDelegated := workosDelegated(e.App, collection)
+
+	if !collection.OTP.Enabled && !isWorkOSDelegated {
 		return e.ForbiddenError("The collection is not configured to allow OTP authentication.", nil)
 	}
 
@@ -27,6 +31,11 @@ func recordAuthWithOTP(e *core.RequestEvent) error {
 	}
 
 	e.Set(core.RequestEventKeyInfoContext, core.RequestInfoContextOTP)
+
+	// delegate to WorkOS Magic Auth
+	if isWorkOSDelegated {
+		return workosAuthWithOTP(e, collection, form)
+	}
 
 	event := new(core.RecordAuthWithOTPRequestEvent)
 	event.RequestEvent = e
@@ -99,6 +108,37 @@ func recordAuthWithOTP(e *core.RequestEvent) error {
 
 		return RecordAuthResponse(e.RequestEvent, e.Record, core.MFAMethodOTP, nil)
 	})
+}
+
+// workosAuthWithOTP exchanges a WorkOS Magic Auth one-time code
+// (requested with a preceding request-otp call) for an auth response.
+func workosAuthWithOTP(e *core.RequestEvent, collection *core.Collection, form *authWithOTPForm) error {
+	// since otps are usually simple digit numbers, enforce an extra rate limit rule as basic enumeration protection
+	err := checkRateLimit(e, "@pb_workos_otp_"+form.OTPId, core.RateLimitRule{MaxRequests: 5, Duration: 180})
+	if err != nil {
+		return e.TooManyRequestsError("Too many attempts, please try again later with a new OTP.", nil)
+	}
+
+	storeKey := workosMagicAuthStoreKeyPrefix + form.OTPId
+
+	email, _ := e.App.Store().Get(storeKey).(string)
+	if email == "" {
+		return e.BadRequestError("Invalid or expired OTP", errors.New("missing or expired WorkOS Magic Auth session"))
+	}
+
+	authResp, err := workosClientFromApp(e.App).AuthenticateWithMagicAuth(e.Request.Context(), form.Password, email)
+	if err != nil {
+		return e.BadRequestError("Invalid or expired OTP", err)
+	}
+
+	e.App.Store().Remove(storeKey)
+
+	record, err := authWorkOSRecord(e, collection, &authResp.User, authResp.OrganizationId)
+	if err != nil {
+		return firstApiError(err, e.BadRequestError("Failed to authenticate.", err))
+	}
+
+	return RecordAuthResponse(e, record, core.MFAMethodOTP, workosAuthMeta(authResp))
 }
 
 // -------------------------------------------------------------------

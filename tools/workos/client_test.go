@@ -441,6 +441,34 @@ func TestConfirmPasswordReset(t *testing.T) {
 	checkTestUser(t, user)
 }
 
+func TestChallengeFactor(t *testing.T) {
+	t.Parallel()
+
+	response := `{
+		"id": "auth_challenge_123",
+		"authentication_factor_id": "auth_factor_123",
+		"expires_at": "2026-01-01T00:10:00.000Z",
+		"created_at": "2026-01-01T00:00:00.000Z",
+		"updated_at": "2026-01-01T00:00:00.000Z"
+	}`
+
+	srv := testServer(t, http.MethodPost, "/auth/factors/auth_factor_123/challenge", "Bearer "+testAPIKey, `{}`, http.StatusCreated, response)
+	defer srv.Close()
+
+	challenge, err := testClient(srv.URL).ChallengeFactor(context.Background(), "auth_factor_123")
+	if err != nil {
+		t.Fatalf("Expected nil error, got %v", err)
+	}
+
+	if challenge.Id != "auth_challenge_123" {
+		t.Fatalf("Expected challenge id %q, got %q", "auth_challenge_123", challenge.Id)
+	}
+
+	if challenge.FactorId != "auth_factor_123" {
+		t.Fatalf("Expected challenge factor id %q, got %q", "auth_factor_123", challenge.FactorId)
+	}
+}
+
 func TestSendVerificationEmail(t *testing.T) {
 	t.Parallel()
 

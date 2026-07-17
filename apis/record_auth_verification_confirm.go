@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
+	"github.com/pocketbase/ozzo-validation/v4/is"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
 	"github.com/spf13/cast"
@@ -17,6 +18,21 @@ func recordConfirmVerification(e *core.RequestEvent) error {
 
 	if collection.Name == core.CollectionNameSuperusers {
 		return e.BadRequestError("All superusers are verified by default.", nil)
+	}
+
+	// delegate to WorkOS when the request carries the optional
+	// {email, code} WorkOS verification fields
+	// (token-only requests fall through to the native flow since
+	// previously issued PB verification tokens may still exist)
+	if workosDelegated(e.App, collection) {
+		wForm := new(workosConfirmVerificationForm)
+		if err = e.BindBody(wForm); err != nil {
+			return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
+		}
+
+		if wForm.Email != "" || wForm.Code != "" {
+			return workosConfirmVerification(e, collection, wForm)
+		}
 	}
 
 	form := new(recordConfirmVerificationForm)
@@ -63,6 +79,53 @@ func recordConfirmVerification(e *core.RequestEvent) error {
 			return e.NoContent(http.StatusNoContent)
 		})
 	})
+}
+
+// workosConfirmVerification verifies a user email address with a WorkOS
+// emailed verification code and syncs the local record verified state.
+func workosConfirmVerification(e *core.RequestEvent, collection *core.Collection, form *workosConfirmVerificationForm) error {
+	if err := form.validate(); err != nil {
+		return firstApiError(err, e.BadRequestError("An error occurred while validating the submitted data.", err))
+	}
+
+	client := workosClientFromApp(e.App)
+
+	wUser, err := client.GetUserByEmail(e.Request.Context(), form.Email)
+	if err != nil {
+		return e.BadRequestError("Invalid or expired verification code.", err)
+	}
+
+	wUser, err = client.VerifyEmail(e.Request.Context(), wUser.Id, form.Code)
+	if err != nil {
+		return e.BadRequestError("Invalid or expired verification code.", err)
+	}
+
+	// sync the local record verified state (if such record exists)
+	record, err := e.App.FindAuthRecordByEmail(collection, form.Email)
+	if err == nil && !record.Verified() {
+		record.SetVerified(true)
+		record.SetIfFieldExists("workosUserId", wUser.Id)
+		if err = e.App.Save(record); err != nil {
+			return firstApiError(err, e.BadRequestError("An error occurred while saving the verified state.", err))
+		}
+
+		e.App.Store().Remove(getVerificationResendKey(record))
+	}
+
+	return e.NoContent(http.StatusNoContent)
+}
+
+type workosConfirmVerificationForm struct {
+	Token string `form:"token" json:"token"`
+	Email string `form:"email" json:"email"`
+	Code  string `form:"code" json:"code"`
+}
+
+func (form *workosConfirmVerificationForm) validate() error {
+	return validation.ValidateStruct(form,
+		validation.Field(&form.Email, validation.Required, validation.Length(1, 255), is.EmailFormat),
+		validation.Field(&form.Code, validation.Required, validation.Length(1, 71)),
+	)
 }
 
 // -------------------------------------------------------------------
