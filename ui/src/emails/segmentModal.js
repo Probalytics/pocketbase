@@ -1,7 +1,10 @@
+import { contactAvatar } from "./contactModal";
 import { filterField } from "./filterEditor";
 
 window.app = window.app || {};
 window.app.modals = window.app.modals || {};
+
+const membersPreviewSize = 8;
 
 app.modals.openSegment = function(segment, onSaved) {
     const modal = segmentModal(segment, onSaved);
@@ -13,8 +16,9 @@ function segmentModal(segment, onSaved) {
     const data = store({
         record: segment ? { ...segment } : { id: "", name: "", collection: "", filter: "" },
         isSaving: false,
-        isCounting: false,
-        membersCount: null,
+        isLoadingMembers: false,
+        members: [],
+        membersTotal: null,
     });
 
     const segmentCollections = () =>
@@ -22,21 +26,37 @@ function segmentModal(segment, onSaved) {
             (c) => !c.system && (c.type === "auth" || c.fields.some((f) => f.name === "email")),
         );
 
-    async function countMembers() {
-        if (data.isCounting || !data.record.collection) return;
-        data.isCounting = true;
-        try {
-            const res = await app.pb.send("/api/marketing/audience", {
-                method: "GET",
-                query: { collection: data.record.collection, filter: data.record.filter || "" },
-            });
-            data.membersCount = res.total;
-        } catch (err) {
-            data.membersCount = null;
-            app.checkApiError(err);
-        }
-        data.isCounting = false;
+    let membersTimer;
+    function scheduleMembersPreview() {
+        clearTimeout(membersTimer);
+        membersTimer = setTimeout(loadMembersPreview, 400);
     }
+
+    async function loadMembersPreview() {
+        if (!data.record.collection) {
+            data.members = [];
+            data.membersTotal = null;
+            return;
+        }
+        data.isLoadingMembers = true;
+        try {
+            const res = await app.pb.collection(data.record.collection).getList(1, membersPreviewSize, {
+                filter: data.record.filter || "",
+                requestKey: "segment_members_preview",
+            });
+            data.members = res.items;
+            data.membersTotal = res.totalItems;
+        } catch (err) {
+            // mid-typing filters are often momentarily invalid — just clear the preview
+            if (!err.isAbort) {
+                data.members = [];
+                data.membersTotal = null;
+            }
+        }
+        data.isLoadingMembers = false;
+    }
+
+    loadMembersPreview();
 
     async function save() {
         if (data.isSaving) return;
@@ -62,7 +82,13 @@ function segmentModal(segment, onSaved) {
     }
 
     return t.div(
-        { className: "modal lg", onafterclose: (el) => el?.remove() },
+        {
+            className: "modal lg",
+            onafterclose: (el) => {
+                clearTimeout(membersTimer);
+                el?.remove();
+            },
+        },
         t.header(
             { className: "modal-header" },
             t.h5({ className: "m-auto" }, data.record.id ? "Edit audience" : "New audience"),
@@ -84,45 +110,20 @@ function segmentModal(segment, onSaved) {
                         value: () => data.record.collection || "",
                         onchange: (s) => {
                             data.record.collection = s?.[0]?.value || "";
-                            data.membersCount = null;
+                            scheduleMembersPreview();
                         },
                     }))),
                 cell(filterField(
                     "Filter",
                     () => data.record.collection,
                     () => data.record.filter || "",
-                    (val) => (data.record.filter = val),
+                    (val) => {
+                        data.record.filter = val;
+                        scheduleMembersPreview();
+                    },
                     "plan='pro' && verified=true",
                 )),
-                cell(t.div(
-                    { className: "flex gap-10" },
-                    t.button(
-                        {
-                            type: "button",
-                            className: () => `btn sm secondary ${data.isCounting ? "loading" : ""}`,
-                            onclick: countMembers,
-                        },
-                        t.i({ className: "ri-group-line" }),
-                        t.span({ className: "txt" }, "Count members"),
-                    ),
-                    () =>
-                        data.membersCount !== null
-                            ? t.strong({ className: "txt-nowrap" }, `${data.membersCount} members`)
-                            : t.span(null, ""),
-                    t.button(
-                        {
-                            type: "button",
-                            className: "btn sm secondary transparent m-l-auto",
-                            disabled: () => !data.record.collection,
-                            onclick: () => {
-                                app.modals.close();
-                                window.location.hash = audiencePreviewHash(data.record);
-                            },
-                        },
-                        t.i({ className: "ri-eye-line" }),
-                        t.span({ className: "txt" }, "Preview members"),
-                    ),
-                )),
+                cell(membersPreview()),
             ),
         ),
         t.footer(
@@ -137,6 +138,60 @@ function segmentModal(segment, onSaved) {
             ),
         ),
     );
+
+    function membersPreview() {
+        return t.div(
+            null,
+            t.div(
+                { className: "flex gap-10 m-b-sm" },
+                t.strong(null, () => data.membersTotal === null ? "Members" : `Members (${data.membersTotal})`),
+                () => (data.isLoadingMembers ? t.span({ className: "loader loader-sm" }) : undefined),
+                () =>
+                    data.record.collection && data.membersTotal !== null
+                        ? t.a(
+                            {
+                                className: "btn sm secondary transparent m-l-auto",
+                                href: audiencePreviewHash(data.record),
+                                onclick: () => app.modals.close(),
+                            },
+                            t.i({ className: "ri-external-link-line" }),
+                            t.span({ className: "txt" }, "Open in Contacts"),
+                        )
+                        : undefined,
+            ),
+            () => {
+                if (!data.record.collection) {
+                    return t.div({ className: "txt-hint" }, "Select a collection to preview its members.");
+                }
+                if (data.membersTotal === 0) {
+                    return t.div({ className: "txt-hint" }, "No members match this filter.");
+                }
+                return t.div(
+                    null,
+                    ...data.members.map((member) =>
+                        t.div(
+                            { className: "contact-row m-b-sm" },
+                            contactAvatar(member),
+                            t.div(
+                                null,
+                                t.div({ className: "contact-name" }, member.name || member.email || member.id),
+                                member.name && member.email
+                                    ? t.div({ className: "contact-email" }, member.email)
+                                    : undefined,
+                            ),
+                        )
+                    ),
+                    () =>
+                        data.membersTotal > data.members.length
+                            ? t.div(
+                                { className: "txt-hint" },
+                                `+ ${data.membersTotal - data.members.length} more`,
+                            )
+                            : undefined,
+                );
+            },
+        );
+    }
 }
 
 export function audiencePreviewHash(segment) {

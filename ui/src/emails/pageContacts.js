@@ -62,7 +62,7 @@ export function pageContacts(route) {
                 t.div(
                     { className: "page-header-secondary-btns" },
                     t.div(
-                        { className: "contacts-collection-select" },
+                        { className: "field contacts-collection-select" },
                         app.components.select({
                             options: () => contactCollections().map((c) => ({ value: c.name, label: c.name })),
                             value: () => data.collectionName,
