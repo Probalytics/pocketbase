@@ -1,5 +1,25 @@
 import { emailsSidebar } from "./emailsSidebar";
 
+// emailsListLayout renders a full-width native page shell (matching the
+// Collections screen): the CRM sidebar, a page-header with breadcrumbs and an
+// optional primary action, the full-width body, and the standard page footer.
+export function emailsListLayout(breadcrumbs, actions, body) {
+    return t.div(
+        { className: "page page-crm" },
+        emailsSidebar(),
+        t.div(
+            { className: "page-content full-height" },
+            t.header(
+                { className: "page-header flex-nowrap" },
+                t.nav({ className: "breadcrumbs" }, ...breadcrumbs.map((crumb) => t.div(null, crumb))),
+                actions ? t.div({ className: "page-header-primary-btns" }, actions) : undefined,
+            ),
+            body,
+            t.footer({ className: "page-footer" }, app.components.credits()),
+        ),
+    );
+}
+
 // emailsLayout renders the shared marketing page shell: the section sidebar,
 // a breadcrumbs header with optional actions, and the page body.
 export function emailsLayout(breadcrumbs, body, actions) {

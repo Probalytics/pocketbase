@@ -1,4 +1,4 @@
-import { emailsLayout } from "./emailsLayout";
+import { emailsListLayout } from "./emailsLayout";
 
 export function pageAutomations() {
     app.store.title = "Automations";
@@ -30,19 +30,19 @@ export function pageAutomations() {
     }
 
     const newButton = t.a(
-        { className: "btn expanded", href: "#/crm/automations/new" },
+        { className: "btn", href: "#/crm/automations/new" },
         t.i({ className: "ri-add-line" }),
         t.span({ className: "txt" }, "New automation"),
     );
 
-    return emailsLayout([{ label: "Automations" }], () => {
+    return emailsListLayout(["CRM", "Automations"], newButton, () => {
         if (data.isLoading) {
-            return t.div({ className: "block txt-center" }, t.span({ className: "loader lg" }));
+            return t.div({ className: "block txt-center p-base" }, t.span({ className: "loader lg" }));
         }
         if (!data.automations.length) {
             return t.div(
                 { className: "block txt-center p-base" },
-                t.p({ className: "txt-hint" }, "No automations yet. Build a trigger-based email pipeline."),
+                t.p({ className: "txt-hint m-b-base" }, "No automations yet. Build a trigger-based email pipeline."),
                 newButton,
             );
         }
@@ -87,5 +87,5 @@ export function pageAutomations() {
                 ),
             ),
         );
-    }, newButton);
+    });
 }

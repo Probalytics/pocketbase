@@ -1,4 +1,4 @@
-import { emailsLayout, formatDate, statusLabel } from "./emailsLayout";
+import { emailsListLayout, formatDate, statusLabel } from "./emailsLayout";
 
 export function pageCampaigns() {
     app.store.title = "Campaigns";
@@ -21,22 +21,17 @@ export function pageCampaigns() {
     }
 
     const newButton = t.a(
-        { className: "btn expanded", href: "#/crm/campaigns/new" },
+        { className: "btn", href: "#/crm/campaigns/new" },
         t.i({ className: "ri-add-line" }),
         t.span({ className: "txt" }, "New campaign"),
     );
 
-    return emailsLayout([{ label: "Campaigns" }], () => {
+    return emailsListLayout(["CRM", "Campaigns"], newButton, () => {
         if (data.isLoading) {
-            return t.div({ className: "block txt-center" }, t.span({ className: "loader lg" }));
+            return t.div({ className: "block txt-center p-base" }, t.span({ className: "loader lg" }));
         }
-
         if (!data.campaigns.length) {
-            return t.div(
-                { className: "block txt-center p-base" },
-                t.p({ className: "txt-hint m-b-base" }, "No campaigns yet. Create your first broadcast."),
-                newButton,
-            );
+            return emptyState("No campaigns yet.", newButton);
         }
 
         return t.table(
@@ -72,10 +67,18 @@ export function pageCampaigns() {
                 ),
             ),
         );
-    }, newButton);
+    });
 }
 
 function rate(part, total) {
     if (!total) return "-";
     return Math.round(((part || 0) / total) * 100) + "%";
+}
+
+function emptyState(message, action) {
+    return t.div(
+        { className: "block txt-center p-base" },
+        t.p({ className: "txt-hint m-b-base" }, message),
+        action,
+    );
 }
