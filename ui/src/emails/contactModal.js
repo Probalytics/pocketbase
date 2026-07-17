@@ -1,4 +1,5 @@
 import { formatDate } from "./emailsLayout";
+import { bodyEditor } from "./richEditor";
 
 window.app = window.app || {};
 window.app.modals = window.app.modals || {};
@@ -294,13 +295,11 @@ function sendEmailModal(collection, record, onSent) {
                         value: () => data.subject,
                         oninput: (e) => (data.subject = e.target.value),
                     }))),
-                sendCell(sendField("Body (HTML)", () =>
-                    t.textarea({
-                        rows: 12,
-                        className: "txt-mono",
-                        value: () => data.body,
-                        oninput: (e) => (data.body = e.target.value),
-                    }))),
+                sendCell(bodyEditor(
+                    "Body",
+                    () => data.body,
+                    (val) => (data.body = val),
+                )),
             ),
         ),
         t.footer(

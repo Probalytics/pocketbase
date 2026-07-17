@@ -1,4 +1,5 @@
 import { emailsLayout, statusLabel } from "./emailsLayout";
+import { bodyEditor } from "./richEditor";
 
 const COLLECTION = "_mailCampaigns";
 
@@ -164,15 +165,12 @@ export function pageCampaign(route) {
                     value: () => data.campaign.subject || "",
                     oninput: (e) => (data.campaign.subject = e.target.value),
                 }))),
-            cell(field("Body (HTML)", () =>
-                t.textarea({
-                    rows: 16,
-                    className: "txt-mono",
-                    placeholder: "<h1>Hi {RECORD:name}</h1> ...",
-                    disabled: () => !data.isEditable,
-                    value: () => data.campaign.body || "",
-                    oninput: (e) => (data.campaign.body = e.target.value),
-                }))),
+            cell(bodyEditor(
+                "Body",
+                () => data.campaign.body || "",
+                (val) => (data.campaign.body = val),
+                () => !data.isEditable,
+            )),
             cell(t.button(
                 { type: "button", className: "btn secondary transparent", onclick: openPreview },
                 t.i({ className: "ri-eye-line" }),

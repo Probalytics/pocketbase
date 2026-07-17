@@ -1,3 +1,5 @@
+import { bodyEditor } from "./richEditor";
+
 window.app = window.app || {};
 window.app.modals = window.app.modals || {};
 
@@ -54,13 +56,11 @@ function templateModal(template, onSaved) {
                         value: () => data.record.subject || "",
                         oninput: (e) => (data.record.subject = e.target.value),
                     }))),
-                cell(field("Body (HTML)", () =>
-                    t.textarea({
-                        rows: 14,
-                        className: "txt-mono",
-                        value: () => data.record.body || "",
-                        oninput: (e) => (data.record.body = e.target.value),
-                    }))),
+                cell(bodyEditor(
+                    "Body",
+                    () => data.record.body || "",
+                    (val) => (data.record.body = val),
+                )),
             ),
         ),
         t.footer(
