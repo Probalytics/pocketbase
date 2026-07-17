@@ -13,7 +13,7 @@ import (
 func TestCollectionsImport(t *testing.T) {
 	t.Parallel()
 
-	totalCollections := 16
+	totalCollections := 17
 
 	scenarios := []tests.ApiScenario{
 		{
@@ -287,12 +287,12 @@ func TestCollectionsImport(t *testing.T) {
 				"OnCollectionUpdateExecute":      1,
 				"OnCollectionAfterUpdateSuccess": 1,
 				// ---
-				"OnModelDelete":                  14,
-				"OnModelAfterDeleteSuccess":      14,
-				"OnModelDeleteExecute":           14,
-				"OnCollectionDelete":             9,
-				"OnCollectionDeleteExecute":      9,
-				"OnCollectionAfterDeleteSuccess": 9,
+				"OnModelDelete":                  15,
+				"OnModelAfterDeleteSuccess":      15,
+				"OnModelDeleteExecute":           15,
+				"OnCollectionDelete":             10,
+				"OnCollectionDeleteExecute":      10,
+				"OnCollectionAfterDeleteSuccess": 10,
 				"OnRecordAfterDeleteSuccess":     5,
 				"OnRecordDelete":                 5,
 				"OnRecordDeleteExecute":          5,
