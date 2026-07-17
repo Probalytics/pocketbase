@@ -87,7 +87,7 @@ func TestCollectionsList(t *testing.T) {
 				`"perPage":2`,
 				`"totalItems":23`,
 				`"items":[{`,
-				`"name":"` + core.CollectionNameMailAutomations + `"`,
+				`"name":"` + core.CollectionNameMailEnrollments + `"`,
 			},
 			ExpectedEvents: map[string]int{
 				"*":                        0,
