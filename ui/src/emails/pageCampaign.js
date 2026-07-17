@@ -12,6 +12,7 @@ export function pageCampaign(route) {
         isBusy: false,
         campaign: blankCampaign(),
         templates: [],
+        segments: [],
         audienceCount: null,
         isCounting: false,
         preview: null,
@@ -26,6 +27,7 @@ export function pageCampaign(route) {
     app.store.title = isNew ? "New campaign" : "Campaign";
 
     loadTemplates();
+    loadSegments();
     if (!isNew) load();
 
     async function load() {
@@ -47,6 +49,14 @@ export function pageCampaign(route) {
         }
     }
 
+    async function loadSegments() {
+        try {
+            data.segments = await app.pb.collection("_mailSegments").getFullList({ sort: "name" });
+        } catch (err) {
+            if (!err.isAbort) app.checkApiError(err);
+        }
+    }
+
     async function save(silent) {
         if (data.isSaving) return data.campaign.id;
         data.isSaving = true;
@@ -56,6 +66,7 @@ export function pageCampaign(route) {
                 subject: data.campaign.subject,
                 body: data.campaign.body,
                 template: data.campaign.template || "",
+                segment: data.campaign.segment || "",
                 audienceCollection: data.campaign.audienceCollection || "",
                 audienceFilter: data.campaign.audienceFilter || "",
                 status: data.campaign.status || "draft",
@@ -93,7 +104,12 @@ export function pageCampaign(route) {
     }
 
     async function refreshCount() {
-        if (!data.campaign.audienceCollection) {
+        const segment = data.campaign.segment
+            ? data.segments.find((s) => s.id === data.campaign.segment)
+            : null;
+        const collection = segment ? segment.collection : data.campaign.audienceCollection;
+        const filter = segment ? segment.filter : data.campaign.audienceFilter;
+        if (!collection) {
             data.audienceCount = null;
             return;
         }
@@ -101,7 +117,7 @@ export function pageCampaign(route) {
         try {
             const res = await app.pb.send("/api/marketing/audience", {
                 method: "GET",
-                query: { collection: data.campaign.audienceCollection, filter: data.campaign.audienceFilter || "" },
+                query: { collection, filter: filter || "" },
             });
             data.audienceCount = res.total;
         } catch (err) {
@@ -181,26 +197,41 @@ export function pageCampaign(route) {
 
     function sidebarFields() {
         return [
-            cell(field("Audience collection", () =>
+            cell(field("Audience", () =>
                 app.components.select({
                     disabled: () => !data.isEditable,
-                    placeholder: "Select collection",
-                    options: () => audienceCollections().map((c) => ({ value: c.name, label: c.name })),
-                    value: () => data.campaign.audienceCollection || "",
+                    options: () =>
+                        [{ value: "", label: "Custom (collection + filter)" }].concat(
+                            data.segments.map((s) => ({ value: s.id, label: s.name })),
+                        ),
+                    value: () => data.campaign.segment || "",
                     onchange: (s) => {
-                        data.campaign.audienceCollection = s?.[0]?.value || "";
+                        data.campaign.segment = s?.[0]?.value || "";
                         data.audienceCount = null;
                     },
                 }))),
-            cell(field("Filter (optional)", () =>
-                t.textarea({
-                    rows: 3,
-                    className: "txt-mono",
-                    placeholder: "status='active'",
-                    disabled: () => !data.isEditable,
-                    value: () => data.campaign.audienceFilter || "",
-                    oninput: (e) => (data.campaign.audienceFilter = e.target.value),
-                }))),
+            () =>
+                data.campaign.segment ? undefined : cell(field("Audience collection", () =>
+                    app.components.select({
+                        disabled: () => !data.isEditable,
+                        placeholder: "Select collection",
+                        options: () => audienceCollections().map((c) => ({ value: c.name, label: c.name })),
+                        value: () => data.campaign.audienceCollection || "",
+                        onchange: (s) => {
+                            data.campaign.audienceCollection = s?.[0]?.value || "";
+                            data.audienceCount = null;
+                        },
+                    }))),
+            () =>
+                data.campaign.segment ? undefined : cell(field("Filter (optional)", () =>
+                    t.textarea({
+                        rows: 3,
+                        className: "txt-mono",
+                        placeholder: "status='active'",
+                        disabled: () => !data.isEditable,
+                        value: () => data.campaign.audienceFilter || "",
+                        oninput: (e) => (data.campaign.audienceFilter = e.target.value),
+                    }))),
             cell(t.div(
                 { className: "flex gap-10" },
                 t.button(
@@ -365,6 +396,7 @@ function blankCampaign() {
         subject: "",
         body: "",
         template: "",
+        segment: "",
         audienceCollection: "",
         audienceFilter: "",
         status: "draft",

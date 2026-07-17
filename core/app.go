@@ -1244,6 +1244,9 @@ type App interface {
 	// SendCampaign expands the campaign audience into the send queue.
 	SendCampaign(campaign *Record) error
 
+	// CampaignAudience resolves the collection and filter a campaign targets.
+	CampaignAudience(campaign *Record) (collection string, filter string)
+
 	// ScheduleCampaign marks a campaign to be sent at a later time.
 	ScheduleCampaign(campaign *Record, at types.DateTime) error
 

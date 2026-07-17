@@ -123,6 +123,39 @@ func TestMarketingCampaignSend(t *testing.T) {
 	}
 }
 
+func TestMarketingCampaignSegment(t *testing.T) {
+	app := setupMarketing(t)
+	defer app.Cleanup()
+
+	segments, err := app.FindCollectionByNameOrId(core.CollectionNameMailSegments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segment := core.NewRecord(segments)
+	segment.Set("name", "A customers")
+	segment.Set("collection", "customers")
+	segment.Set("filter", "email='a@example.com'")
+	if err := app.Save(segment); err != nil {
+		t.Fatal(err)
+	}
+
+	campaign := newCampaign(t, app)
+	campaign.Set("audienceCollection", "")
+	campaign.Set("audienceFilter", "")
+	campaign.Set("segment", segment.Id)
+	if err := app.Save(campaign); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.SendCampaign(campaign); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := queuedCount(t, app, "campaign='"+campaign.Id+"'"); got != 1 {
+		t.Fatalf("expected the segment to narrow the audience to 1 queued message, got %d", got)
+	}
+}
+
 func TestMarketingSuppression(t *testing.T) {
 	app := setupMarketing(t)
 	defer app.Cleanup()

@@ -44,13 +44,25 @@ func (app *BaseApp) queueMarketingMessage(params marketingMessageParams) (*Recor
 	return message, app.Save(message)
 }
 
+// CampaignAudience resolves the collection and filter a campaign targets,
+// preferring its linked segment over the campaign's own audience fields.
+func (app *BaseApp) CampaignAudience(campaign *Record) (collection string, filter string) {
+	if segmentId := campaign.GetString("segment"); segmentId != "" {
+		segment, err := app.FindRecordById(CollectionNameMailSegments, segmentId)
+		if err == nil {
+			return segment.GetString("collection"), segment.GetString("filter")
+		}
+	}
+
+	return campaign.GetString("audienceCollection"), campaign.GetString("audienceFilter")
+}
+
 // enqueueCampaign expands a campaign's audience into individual queued
 // messages and flips the campaign into the "sending" state.
 func (app *BaseApp) enqueueCampaign(campaign *Record) error {
 	subject, body := app.campaignContent(campaign)
 
-	audience := campaign.GetString("audienceCollection")
-	filter := campaign.GetString("audienceFilter")
+	audience, filter := app.CampaignAudience(campaign)
 
 	recipients := 0
 	for offset := 0; ; offset += marketingAudiencePageSize {

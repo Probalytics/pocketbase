@@ -1,5 +1,6 @@
 const crmNavLinks = [
     { href: "#/crm/contacts", icon: "ri-contacts-book-2-line", label: "Contacts" },
+    { href: "#/crm/audiences", icon: "ri-group-line", label: "Audiences" },
     { href: "#/crm/campaigns", icon: "ri-mail-send-line", label: "Campaigns" },
     { href: "#/crm/automations", icon: "ri-flow-chart", label: "Automations" },
     { href: "#/crm/templates", icon: "ri-layout-2-line", label: "Templates" },

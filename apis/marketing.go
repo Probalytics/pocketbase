@@ -166,7 +166,8 @@ func campaignPreview(e *core.RequestEvent) error {
 
 	sample := firstAudienceRecord(e.App, campaign)
 	if recordId := e.Request.URL.Query().Get("recordId"); recordId != "" {
-		if found, err := e.App.FindRecordById(campaign.GetString("audienceCollection"), recordId); err == nil {
+		audience, _ := e.App.CampaignAudience(campaign)
+		if found, err := e.App.FindRecordById(audience, recordId); err == nil {
 			sample = found
 		}
 	}
@@ -236,12 +237,12 @@ func loadCampaign(e *core.RequestEvent) (*core.Record, error) {
 }
 
 func firstAudienceRecord(app core.App, campaign *core.Record) *core.Record {
-	audience := campaign.GetString("audienceCollection")
+	audience, filter := app.CampaignAudience(campaign)
 	if audience == "" {
 		return nil
 	}
 
-	records, err := app.FindRecordsByFilter(audience, campaign.GetString("audienceFilter"), "", 1, 0)
+	records, err := app.FindRecordsByFilter(audience, filter, "", 1, 0)
 	if err != nil || len(records) == 0 {
 		return nil
 	}
