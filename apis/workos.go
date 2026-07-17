@@ -126,7 +126,19 @@ func authWorkOSRecord(e *core.RequestEvent, collection *core.Collection, wUser *
 		if err != nil {
 			return nil, err
 		}
-	} else if wUser.Email != "" && wUser.EmailVerified {
+	}
+
+	// fallback match by the trusted hidden workosUserId field
+	// (e.g. records created via the signup interception before their first
+	// login; the field is hidden and cannot be set by regular clients)
+	if record == nil && collection.Fields.GetByName("workosUserId") != nil {
+		record, err = e.App.FindFirstRecordByData(collection, "workosUserId", wUser.Id)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("failed WorkOS user id record check: %w", err)
+		}
+	}
+
+	if record == nil && wUser.Email != "" && wUser.EmailVerified {
 		// look for an existing auth record with the verified WorkOS email
 		record, err = e.App.FindAuthRecordByEmail(collection, wUser.Email)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {

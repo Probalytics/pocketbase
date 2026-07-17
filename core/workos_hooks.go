@@ -154,41 +154,66 @@ func (app *BaseApp) registerWorkOSHooks() {
 			// (this also disables the plain password validators of the upsert form)
 			e.Record.SetRandomPassword()
 
-			return e.Next()
-		},
-	})
-
-	// Link the WorkOS organization (if any) after a successful
-	// "workos" provider OAuth2/SSO authentication.
-	app.OnRecordAuthWithOAuth2Request().Bind(&hook.Handler[*RecordAuthWithOAuth2RequestEvent]{
-		Id: "__pbWorkOSOAuth2OrgLink__",
-		Func: func(e *RecordAuthWithOAuth2RequestEvent) error {
-			if err := e.Next(); err != nil {
+			if err = e.Next(); err != nil {
 				return err
 			}
 
-			if e.ProviderName != auth.NameWorkOS ||
-				e.Record == nil ||
-				!isWorkOSDelegatedAuthCollection(e.App, e.Collection) {
-				return nil
-			}
-
-			orgId, _ := e.OAuth2User.RawUser["organization_id"].(string)
-			if orgId == "" {
-				return nil
-			}
-
-			if err := WorkOSLinkOrganization(e.App, e.Record, orgId); err != nil {
-				// non-critical error - the user is still authenticated
+			// link the persisted record to its WorkOS user so that the
+			// follow-up logins converge on it even before the email is verified
+			ea := NewExternalAuth(e.App)
+			ea.SetCollectionRef(e.Record.Collection().Id)
+			ea.SetRecordRef(e.Record.Id)
+			ea.SetProvider(auth.NameWorkOS)
+			ea.SetProviderId(user.Id)
+			if err = e.App.Save(ea); err != nil {
+				// non-critical - the workosUserId field fallback still applies
 				e.App.Logger().Error(
-					"Failed to link WorkOS organization after OAuth2 auth",
+					"Failed to save the WorkOS external auth link after signup",
 					"error", err,
-					"organizationId", orgId,
 					"recordId", e.Record.Id,
 				)
 			}
 
 			return nil
+		},
+	})
+
+	// Link the WorkOS organization (if any) on successful "workos"
+	// provider OAuth2/SSO authentications.
+	//
+	// The linking is performed in OnRecordAuthRequest (fired by
+	// RecordAuthResponse before the response body is written) instead of
+	// OnRecordAuthWithOAuth2Request so that the returned record already
+	// reflects the updated organization relation.
+	app.OnRecordAuthRequest().Bind(&hook.Handler[*RecordAuthRequestEvent]{
+		Id: "__pbWorkOSOrgLink__",
+		Func: func(e *RecordAuthRequestEvent) error {
+			if e.Record == nil || !isWorkOSDelegatedAuthCollection(e.App, e.Record.Collection()) {
+				return e.Next()
+			}
+
+			// the OAuth2 auth meta is the marshalized auth.AuthUser and
+			// carries the WorkOS organization id in its rawUser payload
+			var orgId string
+			if meta, ok := e.Meta.(map[string]any); ok {
+				if rawUser, ok := meta["rawUser"].(map[string]any); ok {
+					orgId, _ = rawUser["organization_id"].(string)
+				}
+			}
+
+			if orgId != "" {
+				if err := WorkOSLinkOrganization(e.App, e.Record, orgId); err != nil {
+					// non-critical error - the user is still authenticated
+					e.App.Logger().Error(
+						"Failed to link WorkOS organization on auth",
+						"error", err,
+						"organizationId", orgId,
+						"recordId", e.Record.Id,
+					)
+				}
+			}
+
+			return e.Next()
 		},
 	})
 }
