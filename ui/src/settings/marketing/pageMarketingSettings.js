@@ -3,6 +3,11 @@ import { settingsSidebar } from "../settingsSidebar";
 export function pageMarketingSettings() {
     app.store.title = "Marketing";
 
+    const tlsOptions = [
+        { label: "Auto (StartTLS)", value: false },
+        { label: "Always", value: true },
+    ];
+
     const data = store({
         isLoading: false,
         isSaving: false,
@@ -29,7 +34,7 @@ export function pageMarketingSettings() {
         if (data.isSaving || !data.hasChanges) return;
         data.isSaving = true;
         try {
-            init(await app.pb.settings.update({ marketing: data.form }));
+            init(await app.pb.settings.update(app.utils.filterRedactedProps({ marketing: data.form })));
             app.toasts.success("Successfully saved marketing settings.");
         } catch (err) {
             app.checkApiError(err);
@@ -40,6 +45,7 @@ export function pageMarketingSettings() {
     function init(settings = {}) {
         app.store.settings = JSON.parse(JSON.stringify(settings));
         data.form = settings?.marketing || {};
+        data.form.imap = data.form.imap || {};
         data.initSerialized = JSON.stringify(data.form);
     }
 
@@ -103,6 +109,131 @@ export function pageMarketingSettings() {
                                 value: () => data.form.mailingAddress || "",
                                 oninput: (e) => (data.form.mailingAddress = e.target.value),
                             }),
+                        ),
+                    ),
+                    textField("Reply-To address", "replyTo"),
+                    t.div(
+                        { className: "col-lg-12" },
+                        t.div(
+                            { className: "field" },
+                            t.input({
+                                id: "marketing.imap.enabled",
+                                type: "checkbox",
+                                className: "switch",
+                                checked: () => !!data.form.imap.enabled,
+                                onchange: (e) => (data.form.imap.enabled = e.target.checked),
+                            }),
+                            t.label(
+                                { htmlFor: "marketing.imap.enabled" },
+                                t.span({ className: "txt" }, "Poll an IMAP mailbox for incoming email"),
+                            ),
+                        ),
+                        // IMAP
+                        app.components.slide(
+                            () => data.form.imap.enabled,
+                            t.div(
+                                { className: "grid m-t-sm" },
+                                t.div(
+                                    { className: "col-lg-4" },
+                                    t.div(
+                                        { className: "field" },
+                                        t.label({ htmlFor: "marketing.imap.host" }, "IMAP server host"),
+                                        t.input({
+                                            id: "marketing.imap.host",
+                                            type: "text",
+                                            required: () => !!data.form.imap.enabled,
+                                            value: () => data.form.imap.host || "",
+                                            oninput: (e) => (data.form.imap.host = e.target.value),
+                                        }),
+                                    ),
+                                ),
+                                t.div(
+                                    { className: "col-lg-2" },
+                                    t.div(
+                                        { className: "field" },
+                                        t.label({ htmlFor: "marketing.imap.port" }, "Port"),
+                                        t.input({
+                                            id: "marketing.imap.port",
+                                            type: "number",
+                                            min: 0,
+                                            step: 1,
+                                            required: () => !!data.form.imap.enabled,
+                                            value: () => data.form.imap.port || "",
+                                            oninput: (e) => (data.form.imap.port = parseInt(e.target.value, 10)),
+                                        }),
+                                    ),
+                                ),
+                                t.div(
+                                    { className: "col-lg-3" },
+                                    t.div(
+                                        { className: "field" },
+                                        t.label({ htmlFor: "marketing.imap.username" }, "Username"),
+                                        t.input({
+                                            id: "marketing.imap.username",
+                                            type: "text",
+                                            autocomplete: "off",
+                                            value: () => data.form.imap.username || "",
+                                            oninput: (e) => (data.form.imap.username = e.target.value),
+                                        }),
+                                    ),
+                                ),
+                                t.div(
+                                    { className: "col-lg-3" },
+                                    t.div(
+                                        { className: "field" },
+                                        t.label({ htmlFor: "marketing.imap.password" }, "Password"),
+                                        t.input({
+                                            id: "marketing.imap.password",
+                                            type: "password",
+                                            autocomplete: "off",
+                                            value: () => data.form.imap.password || "",
+                                            oninput: (e) => (data.form.imap.password = e.target.value),
+                                            onkeyup: (e) => {
+                                                if (
+                                                    e.key == "Backspace"
+                                                    && typeof data.form.imap.password === "undefined"
+                                                ) {
+                                                    data.form.imap.password = "";
+                                                }
+                                            },
+                                            placeholder: () =>
+                                                typeof data.form.imap.password !== "undefined"
+                                                    ? ""
+                                                    : "* * * * * *",
+                                        }),
+                                    ),
+                                ),
+                                t.div(
+                                    { className: "col-lg-6" },
+                                    t.div(
+                                        { className: "field" },
+                                        t.label({ htmlFor: "marketing.imap.tls" }, "TLS encryption"),
+                                        app.components.select({
+                                            id: "marketing.imap.tls",
+                                            required: true,
+                                            options: tlsOptions,
+                                            value: () => data.form.imap.tls || false,
+                                            onchange: (selected) => {
+                                                data.form.imap.tls = selected?.[0]?.value;
+                                            },
+                                        }),
+                                    ),
+                                ),
+                                t.div(
+                                    { className: "col-lg-6" },
+                                    t.div(
+                                        { className: "field" },
+                                        t.label({ htmlFor: "marketing.imap.mailbox" }, "Mailbox"),
+                                        t.input({
+                                            id: "marketing.imap.mailbox",
+                                            type: "text",
+                                            placeholder: "INBOX",
+                                            value: () => data.form.imap.mailbox || "",
+                                            oninput: (e) => (data.form.imap.mailbox = e.target.value),
+                                        }),
+                                    ),
+                                ),
+                            ),
                         ),
                     ),
                     t.div(

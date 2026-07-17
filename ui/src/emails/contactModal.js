@@ -49,11 +49,24 @@ function contactModal(collection, record) {
     async function loadMessages() {
         data.isLoadingMessages = true;
         try {
-            const res = await app.pb.collection("_mailMessages").getList(1, 100, {
-                filter: `to="${email}"`,
-                sort: "-created",
-            });
-            data.messages = res.items;
+            const [outbound, inbound] = await Promise.all([
+                app.pb.collection("_mailMessages").getList(1, 100, {
+                    filter: `to="${email}"`,
+                    sort: "-created",
+                }),
+                app.pb.collection("_mailInbox").getList(1, 100, {
+                    filter: `from="${email}"`,
+                    sort: "-receivedAt",
+                }),
+            ]);
+
+            const merged = outbound.items
+                .map((msg) => ({ kind: "out", date: msg.sentAt || msg.created, msg }))
+                .concat(inbound.items.map((msg) => ({ kind: "in", date: msg.receivedAt || msg.created, msg })));
+
+            merged.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+            data.messages = merged;
         } catch (err) {
             if (!err.isAbort) app.checkApiError(err);
         }
@@ -176,14 +189,28 @@ function contactModal(collection, record) {
                 return t.div({ className: "block txt-center p-base" }, t.span({ className: "loader" }));
             }
             if (!data.messages.length) {
-                return t.div({ className: "txt-hint p-base txt-center" }, "No emails sent to this contact yet.");
+                return t.div({ className: "txt-hint p-base txt-center" }, "No emails for this contact yet.");
             }
             return t.ul({ className: "crm-timeline" }, ...data.messages.map(timelineItem));
         });
     }
 }
 
-function timelineItem(msg) {
+function timelineItem(item) {
+    if (item.kind === "in") {
+        return t.li(
+            { className: "crm-timeline-item" },
+            t.span({ className: "crm-timeline-icon" }, t.i({ className: "ri-mail-download-line" })),
+            t.div(
+                { className: "crm-timeline-body" },
+                t.div({ className: "crm-timeline-title" }, item.msg.subject || "(no subject)"),
+                t.div({ className: "crm-timeline-meta" }, "Received " + formatDate(item.msg.receivedAt)),
+            ),
+        );
+    }
+
+    const msg = item.msg;
+
     const icon = msg.clickedAt
         ? { c: "success", i: "ri-cursor-line" }
         : msg.openedAt

@@ -6,6 +6,7 @@ import { pageAutomations } from "@/emails/pageAutomations";
 import { pageCampaign } from "@/emails/pageCampaign";
 import { pageCampaigns } from "@/emails/pageCampaigns";
 import { pageContacts } from "@/emails/pageContacts";
+import { pageInbox } from "@/emails/pageInbox";
 import { pageSuppressions } from "@/emails/pageSuppressions";
 import { pageTemplates } from "@/emails/pageTemplates";
 import { pageLogs } from "@/logs/pageLogs";
@@ -174,6 +175,7 @@ app.routes.blank("#/auth/oauth2-redirect-failure", async (route) => {
 app.routes.superuserOnly("#/collections", pageCollections);
 app.routes.superuserOnly("#/logs", pageLogs);
 app.routes.superuserOnly("#/crm/contacts", pageContacts);
+app.routes.superuserOnly("#/crm/inbox", pageInbox);
 app.routes.superuserOnly("#/crm/audiences", pageAudiences);
 app.routes.superuserOnly("#/crm/campaigns", pageCampaigns);
 app.routes.superuserOnly("#/crm/campaigns/{id}", pageCampaign);
