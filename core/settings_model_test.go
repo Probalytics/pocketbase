@@ -61,6 +61,9 @@ func TestSettings_DBExport(t *testing.T) {
 			settings.Batch.Timeout = 15
 			settings.RateLimits.Enabled = true
 			settings.TrustedProxy.UseLeftmostIP = true
+			settings.WorkOS.ClientId = "workos_client_id"
+			settings.WorkOS.APIKey = "workos_api_key"
+			settings.WorkOS.WebhookSecret = "" // ensures that empty webhook secret is exported
 
 			if s.encryption {
 				os.Setenv(app.EncryptionEnv(), encryptionKey)
@@ -84,7 +87,7 @@ func TestSettings_DBExport(t *testing.T) {
 				valueStr = string(export["value"].([]byte))
 			}
 
-			expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"smtp_host","username":"smtp_username","password":"","authMethod":"","tls":false,"localName":""},"backups":{"cron":"* * * * *","cronMaxKeep":0,"s3":{"enabled":true,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"s3_endpoint","accessKey":"","secret":"s3_secret","forcePathStyle":false},"meta":{"accentColor":"","appName":"test_app_name","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":true},"trustedProxy":{"headers":[],"useLeftmostIP":true},"batch":{"enabled":false,"maxRequests":0,"timeout":15,"maxBodySize":0},"logs":{"maxDays":123,"minLevel":0,"logIP":false,"logAuthId":false}}`
+			expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"smtp_host","username":"smtp_username","password":"","authMethod":"","tls":false,"localName":""},"backups":{"cron":"* * * * *","cronMaxKeep":0,"s3":{"enabled":true,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"s3_endpoint","accessKey":"","secret":"s3_secret","forcePathStyle":false},"meta":{"accentColor":"","appName":"test_app_name","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":true},"trustedProxy":{"headers":[],"useLeftmostIP":true},"batch":{"enabled":false,"maxRequests":0,"timeout":15,"maxBodySize":0},"logs":{"maxDays":123,"minLevel":0,"logIP":false,"logAuthId":false},"workos":{"enabled":false,"clientId":"workos_client_id","apiKey":"workos_api_key","apiURL":""}}`
 			if valueStr != expected {
 				t.Fatalf("Expected exported settings\n%s\ngot\n%s", expected, valueStr)
 			}
@@ -173,6 +176,8 @@ func TestSettingsMarshalJSON(t *testing.T) {
 	settings.SMTP.Password = testSecret
 	settings.S3.Secret = testSecret
 	settings.Backups.S3.Secret = testSecret
+	settings.WorkOS.APIKey = testSecret
+	settings.WorkOS.WebhookSecret = testSecret
 
 	raw, err := json.Marshal(settings)
 	if err != nil {
@@ -180,7 +185,7 @@ func TestSettingsMarshalJSON(t *testing.T) {
 	}
 	rawStr := string(raw)
 
-	expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"","username":"abc","authMethod":"","tls":false,"localName":""},"backups":{"cron":"","cronMaxKeep":0,"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false},"meta":{"accentColor":"","appName":"test123","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":false},"trustedProxy":{"headers":[],"useLeftmostIP":false},"batch":{"enabled":false,"maxRequests":0,"timeout":0,"maxBodySize":0},"logs":{"maxDays":0,"minLevel":0,"logIP":false,"logAuthId":false}}`
+	expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"","username":"abc","authMethod":"","tls":false,"localName":""},"backups":{"cron":"","cronMaxKeep":0,"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false},"meta":{"accentColor":"","appName":"test123","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":false},"trustedProxy":{"headers":[],"useLeftmostIP":false},"batch":{"enabled":false,"maxRequests":0,"timeout":0,"maxBodySize":0},"logs":{"maxDays":0,"minLevel":0,"logIP":false,"logAuthId":false},"workos":{"enabled":false,"clientId":"","apiURL":""}}`
 
 	if rawStr != expected {
 		t.Fatalf("Expected\n%v\ngot\n%v", expected, rawStr)
@@ -210,6 +215,9 @@ func TestSettingsValidate(t *testing.T) {
 	s.Batch.Timeout = -1
 	s.RateLimits.Enabled = true
 	s.RateLimits.Rules = nil
+	s.WorkOS.Enabled = true
+	s.WorkOS.ClientId = ""
+	s.WorkOS.APIKey = ""
 
 	// check if Validate() is triggering the members validate methods.
 	err := app.Validate(s)
@@ -226,6 +234,7 @@ func TestSettingsValidate(t *testing.T) {
 		`"backups":{`,
 		`"batch":{`,
 		`"rateLimits":{`,
+		`"workos":{`,
 	}
 
 	errBytes, _ := json.Marshal(err)
@@ -448,6 +457,65 @@ func TestS3ConfigValidate(t *testing.T) {
 				Region:    "test",
 				AccessKey: "test",
 				Secret:    "test",
+			},
+			[]string{},
+		},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			result := s.config.Validate()
+
+			tests.TestValidationErrors(t, result, s.expectedErrors)
+		})
+	}
+}
+
+func TestWorkOSConfigValidate(t *testing.T) {
+	t.Parallel()
+
+	scenarios := []struct {
+		name           string
+		config         core.WorkOSConfig
+		expectedErrors []string
+	}{
+		{
+			"zero values (disabled)",
+			core.WorkOSConfig{},
+			[]string{},
+		},
+		{
+			"zero values (enabled)",
+			core.WorkOSConfig{Enabled: true},
+			[]string{"clientId", "apiKey"},
+		},
+		{
+			"invalid api url",
+			core.WorkOSConfig{
+				Enabled:  true,
+				ClientId: "client_test",
+				APIKey:   "sk_test",
+				APIURL:   "invalid",
+			},
+			[]string{"apiURL"},
+		},
+		{
+			"valid data (without api url)",
+			core.WorkOSConfig{
+				Enabled:  true,
+				ClientId: "client_test",
+				APIKey:   "sk_test",
+			},
+			[]string{},
+		},
+		{
+			"valid data (with api url)",
+			core.WorkOSConfig{
+				Enabled:       true,
+				ClientId:      "client_test",
+				APIKey:        "sk_test",
+				WebhookSecret: "whsec_test",
+				APIURL:        "https://api.workos.test",
 			},
 			[]string{},
 		},
