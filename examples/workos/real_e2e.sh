@@ -133,5 +133,23 @@ else
   echo "SKIP  11: sso_required mapping (no SSO connection matching example.com in this environment? got: $(echo "$SSOAUTH" | head -c 200))"
 fi
 
+# 8. email-change contract: the fork's confirm-email-change delegation calls
+#    WorkOS UpdateUser with email_verified=true. Verify directly against WorkOS
+#    that changing the email that way keeps the account able to password-login
+#    (without email_verified WorkOS resets it to false and blocks login).
+if [ -n "$WUID" ]; then
+  NEWEMAIL="pbfork.chg.$TS@pbfork-$TS.com"
+  UPD=$(curl -s -X PUT "$WOS/user_management/users/$WUID" -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$NEWEMAIL\",\"email_verified\":true}")
+  echo "$UPD" | grep -q "\"email\":\"$NEWEMAIL\"" && echo "$UPD" | grep -q '"email_verified":true' \
+    && ok "12: WorkOS UpdateUser changed the email and kept it verified" \
+    || bad "12: WorkOS email update" "$(echo "$UPD" | head -c 200)"
+  RELOGIN=$(curl -s -w '\n%{http_code}' -X POST $PB/api/collections/users/auth-with-password -H 'Content-Type: application/json' \
+    -d "{\"identity\":\"$NEWEMAIL\",\"password\":\"$PW\"}")
+  [ "$(echo "$RELOGIN" | tail -1)" = 200 ] && ok "13: password login works with the changed email" || bad "13: login after email change" "$(echo "$RELOGIN" | head -c 200)"
+else
+  echo "SKIP  12-13: email-change contract (no WorkOS user id)"
+fi
+
 echo; echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

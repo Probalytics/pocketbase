@@ -38,6 +38,14 @@ func recordConfirmEmailChange(e *core.RequestEvent) error {
 	event.NewEmail = newEmail
 
 	return e.App.OnRecordConfirmEmailChangeRequest().Trigger(event, func(e *core.RecordConfirmEmailChangeRequestEvent) error {
+		// delegate the email change to WorkOS FIRST so that a WorkOS failure
+		// aborts before the local record email is desynced from WorkOS
+		if workosDelegated(e.App, e.Collection) {
+			if err := workosConfirmEmailChange(e.RequestEvent, e.Record, e.NewEmail); err != nil {
+				return err
+			}
+		}
+
 		e.Record.SetEmail(e.NewEmail)
 		e.Record.SetVerified(true)
 
@@ -69,9 +77,20 @@ type EmailChangeConfirmForm struct {
 }
 
 func (form *EmailChangeConfirmForm) validate() error {
+	passwordRules := []validation.Rule{validation.Required, validation.Length(1, 100), validation.By(form.checkPassword)}
+
+	// WorkOS delegated records keep only a random local password (the real
+	// credentials live in WorkOS and SSO/Magic Auth users have none at all),
+	// so the local password cannot be validated. The single-use email-change
+	// token, signed by PocketBase and delivered to the new address, is the
+	// ownership proof in that case.
+	if workosDelegated(form.app, form.collection) {
+		passwordRules = nil
+	}
+
 	return validation.ValidateStruct(form,
 		validation.Field(&form.Token, validation.Required, validation.By(form.checkToken)),
-		validation.Field(&form.Password, validation.Required, validation.Length(1, 100), validation.By(form.checkPassword)),
+		validation.Field(&form.Password, passwordRules...),
 	)
 }
 

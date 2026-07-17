@@ -94,6 +94,24 @@ is skipped (the refresh proceeds as before). Transient WorkOS/network
 errors during a refresh also fail open, so an outage doesn't log everyone
 out.
 
+## Email changes
+
+The native `request-email-change` / `confirm-email-change` endpoints keep
+working, and the confirmation still goes through PocketBase's own signed,
+single-use token emailed to the new address. On confirmation the change is
+additionally propagated to WorkOS (via `UpdateUser`) so the WorkOS user and
+the local record stay in sync.
+
+Because the PocketBase token already proves ownership of the new address,
+the WorkOS email is updated with `email_verified: true` (otherwise WorkOS
+resets it to unverified and blocks the next password login). If the WorkOS
+update fails, the confirmation is aborted and the local email is left
+unchanged, so the two never drift apart.
+
+For delegated collections the confirm step does not require the account
+password (delegated records only hold a random local password, and SSO /
+Magic Auth users have none) — possession of the emailed token is the proof.
+
 ## Calling WorkOS directly from the client
 
 Enable `workos.exposeTokens` to include the raw WorkOS `accessToken` and

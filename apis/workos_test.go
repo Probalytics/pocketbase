@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -275,6 +276,31 @@ func newMockWorkOSServer() *httptest.Server {
 			data = append(data, mockWorkOSUserPayload(email, u))
 		}
 		writeJSON(w, 200, map[string]any{"data": data})
+	})
+
+	mux.HandleFunc("PUT /user_management/users/{userId}", func(w http.ResponseWriter, r *http.Request) {
+		if !requireBearer(w, r) {
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		mockWorkOSUpdateMu.Lock()
+		mockWorkOSLastUpdate = body
+		mockWorkOSUpdateMu.Unlock()
+
+		userId := r.PathValue("userId")
+		if userId == "user_wos_update_fail" {
+			writeErr(w, 422, "email_not_available", "Email is already in use.")
+			return
+		}
+
+		emailVerified, _ := body["email_verified"].(bool)
+		writeJSON(w, 200, map[string]any{
+			"id":             userId,
+			"email":          body["email"],
+			"email_verified": emailVerified,
+		})
 	})
 
 	mux.HandleFunc("POST /user_management/magic_auth", func(w http.ResponseWriter, r *http.Request) {
@@ -1783,4 +1809,154 @@ func mustJSON(t testing.TB, v any) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// mockWorkOSLastUpdate captures the last PUT /user_management/users/{id}
+// request body seen by the mock server (see the PUT handler).
+var (
+	mockWorkOSUpdateMu   sync.Mutex
+	mockWorkOSLastUpdate map[string]any
+)
+
+func resetMockWorkOSUpdate() {
+	mockWorkOSUpdateMu.Lock()
+	mockWorkOSLastUpdate = nil
+	mockWorkOSUpdateMu.Unlock()
+}
+
+func lastMockWorkOSUpdate() map[string]any {
+	mockWorkOSUpdateMu.Lock()
+	defer mockWorkOSUpdateMu.Unlock()
+	return mockWorkOSLastUpdate
+}
+
+func TestRecordAuthWorkOSConfirmEmailChange(t *testing.T) {
+	// not parallel: asserts against the shared mock update capture
+	resetMockWorkOSUpdate()
+
+	srv := newMockWorkOSServer()
+	defer srv.Close()
+
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	setupWorkOSApp(t, app, srv.URL)
+
+	// turn the seeded users record into a WorkOS-delegated one
+	record, err := app.FindAuthRecordByEmail("users", "test@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Set("workosUserId", "user_wos_test")
+	if err = app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	token, err := record.NewEmailChangeToken("change@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pbRouter, err := apis.NewRouter(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux, err := pbRouter.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// confirm WITHOUT a password (delegated records have a random local one)
+	req := httptest.NewRequest(http.MethodPost, "/api/collections/users/confirm-email-change", strings.NewReader(`{"token":"`+token+`"}`))
+	req.Header.Set("content-type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != 204 {
+		t.Fatalf("expected status 204, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// the WorkOS user email must have been updated with email_verified=true
+	upd := lastMockWorkOSUpdate()
+	if upd == nil {
+		t.Fatal("expected a WorkOS UpdateUser call")
+	}
+	if upd["email"] != "change@example.com" {
+		t.Fatalf("expected WorkOS email update to change@example.com, got %v", upd["email"])
+	}
+	if upd["email_verified"] != true {
+		t.Fatalf("expected the WorkOS email update to mark email_verified=true, got %v", upd["email_verified"])
+	}
+
+	// the local record must reflect the new (verified) email
+	updated, err := app.FindRecordById("users", record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Email() != "change@example.com" {
+		t.Fatalf("expected the local email to be change@example.com, got %q", updated.Email())
+	}
+	if !updated.Verified() {
+		t.Fatal("expected the local record to be verified after the email change")
+	}
+}
+
+func TestRecordAuthWorkOSConfirmEmailChangeAbortsOnWorkOSFailure(t *testing.T) {
+	resetMockWorkOSUpdate()
+
+	srv := newMockWorkOSServer()
+	defer srv.Close()
+
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	setupWorkOSApp(t, app, srv.URL)
+
+	record, err := app.FindAuthRecordByEmail("users", "test@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the mock rejects updates for this WorkOS user id
+	record.Set("workosUserId", "user_wos_update_fail")
+	if err = app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	token, err := record.NewEmailChangeToken("change@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pbRouter, err := apis.NewRouter(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux, err := pbRouter.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/collections/users/confirm-email-change", strings.NewReader(`{"token":"`+token+`"}`))
+	req.Header.Set("content-type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected the confirm to fail with 400 when WorkOS rejects the update, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// the local email must be unchanged (no desync on WorkOS failure)
+	unchanged, err := app.FindRecordById("users", record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Email() != "test@example.com" {
+		t.Fatalf("expected the local email to remain test@example.com after a WorkOS failure, got %q", unchanged.Email())
+	}
 }

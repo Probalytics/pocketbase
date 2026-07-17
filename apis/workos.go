@@ -1,6 +1,7 @@
 package apis
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -66,6 +67,36 @@ func workosClientFromApp(app core.App) *workos.Client {
 	}
 }
 
+// workosResolveUserId returns the WorkOS user id linked to the given auth
+// record, resolved from (in order of trust): the hidden workosUserId field,
+// the "workos" _externalAuths link, then a lookup by the record's current
+// email.
+func workosResolveUserId(ctx context.Context, app core.App, record *core.Record) (string, error) {
+	if id := record.GetString("workosUserId"); id != "" {
+		return id, nil
+	}
+
+	rel, err := app.FindFirstExternalAuthByExpr(dbx.HashExp{
+		"collectionRef": record.Collection().Id,
+		"provider":      auth.NameWorkOS,
+		"recordRef":     record.Id,
+	})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	if rel != nil {
+		return rel.ProviderId(), nil
+	}
+
+	// last resort: resolve by the record's current email
+	wUser, err := workosClientFromApp(app).GetUserByEmail(ctx, record.Email())
+	if err != nil {
+		return "", err
+	}
+
+	return wUser.Id, nil
+}
+
 // workosProviderConfig returns an OAuth2 provider config for the "workos"
 // provider synthesized from the app WorkOS settings.
 //
@@ -86,6 +117,31 @@ func workosProviderConfig(app core.App) core.OAuth2ProviderConfig {
 		AuthURL:      baseURL + "/user_management/authorize",
 		TokenURL:     baseURL + "/user_management/authenticate",
 	}
+}
+
+// workosConfirmEmailChange delegates a confirmed email change to WorkOS by
+// updating the linked WorkOS user's email.
+//
+// The new email is marked verified because the change was already confirmed
+// through the native PocketBase token flow (a single-use signed token
+// delivered to the new address). Without this the real WorkOS API resets
+// email_verified to false, which would block subsequent password logins in
+// environments that require verified emails.
+func workosConfirmEmailChange(e *core.RequestEvent, record *core.Record, newEmail string) error {
+	userId, err := workosResolveUserId(e.Request.Context(), e.App, record)
+	if err != nil {
+		return firstApiError(err, e.BadRequestError("Failed to resolve the WorkOS user for the email change.", err))
+	}
+
+	_, err = workosClientFromApp(e.App).UpdateUser(e.Request.Context(), userId, workos.UpdateUserOpts{
+		Email:         newEmail,
+		EmailVerified: true,
+	})
+	if err != nil {
+		return firstApiError(err, e.BadRequestError("Failed to change the WorkOS user email.", err))
+	}
+
+	return nil
 }
 
 // workosAuthMeta builds a small meta payload for the RecordAuthResponse
