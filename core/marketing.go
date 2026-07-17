@@ -9,6 +9,7 @@ const (
 	CollectionNameMailEnrollments  = "_mailEnrollments"
 	CollectionNameMailMessages     = "_mailMessages"
 	CollectionNameMailSegments     = "_mailSegments"
+	CollectionNameMailInbox        = "_mailInbox"
 )
 
 // Delivery states of a single queued email (a _mailMessages record).

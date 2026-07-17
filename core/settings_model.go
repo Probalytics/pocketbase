@@ -350,11 +350,13 @@ func (s *Settings) MarshalJSON() ([]byte, error) {
 	s.mu.RUnlock()
 
 	copy.SMTP.hidePassword = true
+	copy.Marketing.IMAP.hidePassword = true
 
 	sensitiveFields := []*string{
 		&copy.SMTP.Password,
 		&copy.S3.Secret,
 		&copy.Backups.S3.Secret,
+		&copy.Marketing.IMAP.Password,
 	}
 
 	// mask all sensitive fields

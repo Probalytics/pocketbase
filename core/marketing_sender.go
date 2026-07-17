@@ -127,7 +127,7 @@ func (app *BaseApp) buildMarketingEmail(message *Record) (*mailer.Message, error
 	base := marketingBaseURL(app)
 	token := message.GetString("token")
 
-	return &mailer.Message{
+	email := &mailer.Message{
 		From:    mail.Address{Name: meta.SenderName, Address: meta.SenderAddress},
 		To:      []mail.Address{*address},
 		Subject: message.GetString("subject"),
@@ -136,7 +136,13 @@ func (app *BaseApp) buildMarketingEmail(message *Record) (*mailer.Message, error
 			"List-Unsubscribe":      fmt.Sprintf("<%s/api/marketing/unsubscribe/%s>", base, token),
 			"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 		},
-	}, nil
+	}
+
+	if replyTo := app.Settings().Marketing.ReplyTo; replyTo != "" {
+		email.Headers["Reply-To"] = replyTo
+	}
+
+	return email, nil
 }
 
 func (app *BaseApp) retryOrFailMarketingMessage(message *Record, cause error) error {

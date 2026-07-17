@@ -18,6 +18,7 @@ func (app *BaseApp) registerMarketingHooks() {
 		app.processMailQueue()
 	})
 	app.Cron().Add(marketingAutomationsCron, "* * * * *", app.processAutomationEnrollments)
+	app.Cron().Add(marketingInboxCron, "* * * * *", app.processMailInbox)
 
 	app.OnRecordAfterCreateSuccess().Bind(&hook.Handler[*RecordEvent]{
 		Id: "__pbMarketingTriggerCreate__",
