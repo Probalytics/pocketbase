@@ -485,6 +485,24 @@ type WorkOSConfig struct {
 	// APIURL is the base WorkOS API url
 	// (default to https://api.workos.com; overridable for tests).
 	APIURL string `form:"apiURL" json:"apiURL"`
+
+	// SyncOnRefresh enables re-validating the WorkOS session on every
+	// PocketBase auth-refresh of a delegated collection: the stored
+	// WorkOS refresh token is exchanged for a fresh one and the local
+	// record/organization state is re-synced. If WorkOS rejects the
+	// refresh (revoked/expired session, suspended or deleted user) the
+	// PocketBase refresh is rejected too.
+	//
+	// Persisting the refresh token requires an app encryption key
+	// (the --encryptionEnv key); without it the token is not stored and
+	// the re-validation is skipped.
+	SyncOnRefresh bool `form:"syncOnRefresh" json:"syncOnRefresh"`
+
+	// ExposeTokens includes the raw WorkOS access and refresh tokens in
+	// the "workos" auth response meta so that clients can call the WorkOS
+	// APIs directly. Off by default since it surfaces a long-lived
+	// credential to the client.
+	ExposeTokens bool `form:"exposeTokens" json:"exposeTokens"`
 }
 
 // Validate makes WorkOSConfig validatable by implementing [validation.Validatable] interface.

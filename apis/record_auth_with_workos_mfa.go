@@ -45,7 +45,9 @@ func recordAuthWithWorkOSMFA(e *core.RequestEvent) error {
 		return firstApiError(err, e.BadRequestError("Failed to authenticate.", err))
 	}
 
-	return RecordAuthResponse(e, record, core.MFAMethodPassword, workosAuthMeta(authResp))
+	workosPersistRefreshToken(e.App, record, authResp.RefreshToken)
+
+	return RecordAuthResponse(e, record, core.MFAMethodPassword, workosAuthMeta(e.App, authResp))
 }
 
 // -------------------------------------------------------------------

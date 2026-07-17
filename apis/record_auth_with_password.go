@@ -165,7 +165,9 @@ func workosAuthWithPassword(e *core.RequestEvent, collection *core.Collection, f
 		return firstApiError(err, e.BadRequestError("Failed to authenticate.", err))
 	}
 
-	return RecordAuthResponse(e, record, core.MFAMethodPassword, workosAuthMeta(authResp))
+	workosPersistRefreshToken(e.App, record, authResp.RefreshToken)
+
+	return RecordAuthResponse(e, record, core.MFAMethodPassword, workosAuthMeta(e.App, authResp))
 }
 
 // -------------------------------------------------------------------

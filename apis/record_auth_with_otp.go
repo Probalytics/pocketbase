@@ -138,7 +138,9 @@ func workosAuthWithOTP(e *core.RequestEvent, collection *core.Collection, form *
 		return firstApiError(err, e.BadRequestError("Failed to authenticate.", err))
 	}
 
-	return RecordAuthResponse(e, record, core.MFAMethodOTP, workosAuthMeta(authResp))
+	workosPersistRefreshToken(e.App, record, authResp.RefreshToken)
+
+	return RecordAuthResponse(e, record, core.MFAMethodOTP, workosAuthMeta(e.App, authResp))
 }
 
 // -------------------------------------------------------------------

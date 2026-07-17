@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -16,8 +17,13 @@ import (
 	"github.com/pocketbase/pocketbase/tools/auth"
 	"github.com/pocketbase/pocketbase/tools/list"
 	"github.com/pocketbase/pocketbase/tools/router"
+	"github.com/pocketbase/pocketbase/tools/security"
 	"github.com/pocketbase/pocketbase/tools/workos"
 )
+
+// workosRefreshTokenField is the hidden users field holding the encrypted
+// WorkOS refresh token (see settings.WorkOS.SyncOnRefresh).
+const workosRefreshTokenField = "workosRefreshToken"
 
 // bindWorkOSApi registers the WorkOS delegation api endpoints.
 func bindWorkOSApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
@@ -84,13 +90,121 @@ func workosProviderConfig(app core.App) core.OAuth2ProviderConfig {
 
 // workosAuthMeta builds a small meta payload for the RecordAuthResponse
 // of the WorkOS delegated auth flows.
-func workosAuthMeta(authResp *workos.AuthResponse) map[string]any {
-	return map[string]any{
-		"workos": map[string]any{
-			"organizationId":       authResp.OrganizationId,
-			"authenticationMethod": authResp.AuthenticationMethod,
-		},
+//
+// The raw WorkOS access/refresh tokens are included only when the operator
+// opts in via settings.WorkOS.ExposeTokens (off by default, as the refresh
+// token is a long-lived credential).
+func workosAuthMeta(app core.App, authResp *workos.AuthResponse) map[string]any {
+	meta := map[string]any{
+		"organizationId":       authResp.OrganizationId,
+		"authenticationMethod": authResp.AuthenticationMethod,
 	}
+
+	if app.Settings().WorkOS.ExposeTokens {
+		meta["accessToken"] = authResp.AccessToken
+		meta["refreshToken"] = authResp.RefreshToken
+	}
+
+	return map[string]any{"workos": meta}
+}
+
+// workosEncryptionKey returns the configured app encryption key (or "" when
+// none is set, i.e. the server was started without --encryptionEnv).
+func workosEncryptionKey(app core.App) string {
+	return os.Getenv(app.EncryptionEnv())
+}
+
+// workosPersistRefreshToken stores the WorkOS refresh token, encrypted with
+// the app encryption key, on the record's hidden workosRefreshToken field.
+//
+// It is a no-op when session syncing is disabled, the token is empty, the
+// collection has no such field, or no app encryption key is configured - in
+// the last case a long-lived credential must not be written in plaintext.
+func workosPersistRefreshToken(app core.App, record *core.Record, refreshToken string) {
+	if record == nil || refreshToken == "" || !app.Settings().WorkOS.SyncOnRefresh {
+		return
+	}
+	if record.Collection().Fields.GetByName(workosRefreshTokenField) == nil {
+		return
+	}
+
+	key := workosEncryptionKey(app)
+	if key == "" {
+		app.Logger().Warn("[workos] refresh token not persisted: no app encryption key configured (set --encryptionEnv)")
+		return
+	}
+
+	enc, err := security.Encrypt([]byte(refreshToken), key)
+	if err != nil {
+		app.Logger().Error("[workos] failed to encrypt refresh token", "error", err)
+		return
+	}
+
+	record.Set(workosRefreshTokenField, enc)
+	if err := app.Save(record); err != nil {
+		app.Logger().Error("[workos] failed to persist refresh token", "error", err, "recordId", record.Id)
+	}
+}
+
+// workosRefreshSync re-validates the stored WorkOS session on a PocketBase
+// auth-refresh of a delegated collection and re-syncs the record/org state.
+//
+// It returns the WorkOS auth meta (or nil) and a non-nil api error ONLY when
+// the refresh must be rejected because WorkOS explicitly invalidated the
+// session (revoked/expired token, suspended or deleted user). Transient
+// transport errors, a missing/undecryptable stored token or a missing
+// encryption key fail open (the refresh proceeds) so that operational issues
+// don't lock every user out.
+func workosRefreshSync(e *core.RequestEvent, collection *core.Collection, record *core.Record) (any, error) {
+	if record == nil || collection.Fields.GetByName(workosRefreshTokenField) == nil {
+		return nil, nil
+	}
+
+	stored := record.GetString(workosRefreshTokenField)
+	if stored == "" {
+		return nil, nil // nothing stored (e.g. authenticated before the feature was enabled)
+	}
+
+	key := workosEncryptionKey(e.App)
+	if key == "" {
+		e.App.Logger().Warn("[workos] cannot re-validate session on refresh: no app encryption key configured")
+		return nil, nil
+	}
+
+	plain, err := security.Decrypt(stored, key)
+	if err != nil {
+		// e.g. the encryption key was rotated - don't lock users out over ops
+		e.App.Logger().Warn("[workos] failed to decrypt stored refresh token", "error", err, "recordId", record.Id)
+		return nil, nil
+	}
+
+	authResp, err := workosClientFromApp(e.App).AuthenticateWithRefreshToken(e.Request.Context(), string(plain))
+	if err != nil {
+		var apiErr *workos.APIError
+		if errors.As(err, &apiErr) {
+			// WorkOS rejected the session -> reject the PocketBase refresh too
+			e.App.Logger().Info("[workos] auth-refresh rejected by WorkOS", "recordId", record.Id, "code", apiErr.Code)
+			return nil, e.UnauthorizedError("The WorkOS session is no longer valid.", err)
+		}
+		// transport/network error -> fail open
+		e.App.Logger().Warn("[workos] auth-refresh session check failed (allowing refresh)", "error", err, "recordId", record.Id)
+		return nil, nil
+	}
+
+	// re-sync the record/org state from the refreshed session
+	// (the refresh_token grant may return a zero-value user, hence the guard)
+	if authResp.User.Id != "" {
+		if synced, syncErr := authWorkOSRecord(e, collection, &authResp.User, authResp.OrganizationId); syncErr != nil {
+			e.App.Logger().Warn("[workos] failed to re-sync record on refresh", "error", syncErr, "recordId", record.Id)
+		} else if synced != nil {
+			record = synced
+		}
+	}
+
+	// persist the rotated refresh token (WorkOS rotates it on every exchange)
+	workosPersistRefreshToken(e.App, record, authResp.RefreshToken)
+
+	return workosAuthMeta(e.App, authResp), nil
 }
 
 // authWorkOSRecord converges a WorkOS User Management user to a single

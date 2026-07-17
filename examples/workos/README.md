@@ -67,3 +67,36 @@ Point a WorkOS webhook at `https://<your host>/api/workos/webhooks`.
 `dsync.user.created/updated` provision or update shadow user records,
 `dsync.user.deleted` suspends them (blocking sign in) without deleting
 any data.
+
+## Session hardening (token refresh)
+
+By default a PocketBase auth token is independent of the WorkOS session
+once issued, so revoking or suspending a user in WorkOS only takes effect
+on the next Directory Sync event (or when the PocketBase token expires).
+
+Enabling `workos.syncOnRefresh` closes that gap: on every PocketBase
+`auth-refresh` of a delegated collection the stored WorkOS refresh token is
+exchanged for a fresh one and the local record/organization state is
+re-synced. If WorkOS rejects the exchange (revoked/expired session,
+suspended or deleted user) the PocketBase refresh is rejected too, logging
+the user out at their next refresh.
+
+The refresh token is stored **encrypted** in a hidden `workosRefreshToken`
+users field, so this requires starting the server with an encryption key:
+
+```sh
+./pocketbase serve --encryptionEnv=PB_ENCRYPTION_KEY
+# with PB_ENCRYPTION_KEY set to a 32-character secret
+```
+
+Without an encryption key the token is not persisted and the re-validation
+is skipped (the refresh proceeds as before). Transient WorkOS/network
+errors during a refresh also fail open, so an outage doesn't log everyone
+out.
+
+## Calling WorkOS directly from the client
+
+Enable `workos.exposeTokens` to include the raw WorkOS `accessToken` and
+`refreshToken` in the `workos` object of the auth response `meta`, for
+clients that need to call the WorkOS APIs directly. It is off by default
+since it surfaces a long-lived credential to the client.

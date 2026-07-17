@@ -71,6 +71,28 @@ export function pageWorkOSSettings(route) {
         return window.location.origin + "/api/workos/webhooks";
     }
 
+    function switchField(prop, label, hint) {
+        return t.div(
+            { className: "field" },
+            t.input({
+                id: "workos." + prop,
+                name: "workos." + prop,
+                type: "checkbox",
+                className: "switch",
+                checked: () => !!data.formSettings.workos[prop],
+                onchange: (e) => (data.formSettings.workos[prop] = e.target.checked),
+            }),
+            t.label(
+                { htmlFor: "workos." + prop },
+                t.span({ className: "txt" }, label),
+                !hint ? undefined : t.i({
+                    className: "ri-information-line link-faded",
+                    ariaDescription: app.attrs.tooltip(hint),
+                }),
+            ),
+        );
+    }
+
     // mirrors the smtp.password handling - the secrets are omitted from
     // the settings response and submitting without them keeps the stored values
     function secretField(prop, label, hint) {
@@ -249,6 +271,22 @@ export function pageWorkOSSettings(route) {
                                             () => data.showMoreOptions,
                                             t.div(
                                                 { className: "grid m-t-sm" },
+                                                t.div(
+                                                    { className: "col-lg-12" },
+                                                    switchField(
+                                                        "syncOnRefresh",
+                                                        "Re-validate the WorkOS session on token refresh",
+                                                        "On every auth-refresh, exchange the stored WorkOS refresh token for a fresh one and re-sync the record/organization state. If WorkOS rejects the session (revoked, expired, suspended or deleted user) the refresh is rejected too. Requires the server to be started with an encryption key (--encryptionEnv) so the refresh token can be stored encrypted.",
+                                                    ),
+                                                ),
+                                                t.div(
+                                                    { className: "col-lg-12" },
+                                                    switchField(
+                                                        "exposeTokens",
+                                                        "Expose the WorkOS tokens in the auth response",
+                                                        "Include the raw WorkOS access and refresh tokens in the auth response meta so clients can call the WorkOS APIs directly. Off by default since it surfaces a long-lived credential to the client.",
+                                                    ),
+                                                ),
                                                 t.div(
                                                     { className: "col-lg-12" },
                                                     t.div(

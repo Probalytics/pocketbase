@@ -105,6 +105,16 @@ func init() {
 			})
 		}
 
+		// holds the encrypted WorkOS refresh token used to re-validate the
+		// session on auth-refresh (see settings.WorkOS.SyncOnRefresh);
+		// hidden so it is never exposed through the API
+		if users.Fields.GetByName("workosRefreshToken") == nil {
+			users.Fields.Add(&core.TextField{
+				Name:   "workosRefreshToken",
+				Hidden: true,
+			})
+		}
+
 		// combine the previous "allow any" semantics with the suspended check
 		// (only when the collection still uses the stock default rule)
 		if users.AuthRule == nil || *users.AuthRule == defaultUsersAuthRule {
@@ -143,6 +153,7 @@ func init() {
 			users.Fields.RemoveByName("organization")
 			users.Fields.RemoveByName("workosUserId")
 			users.Fields.RemoveByName("suspended")
+			users.Fields.RemoveByName("workosRefreshToken")
 
 			if users.AuthRule != nil && *users.AuthRule == workosUsersAuthRule {
 				users.AuthRule = types.Pointer(defaultUsersAuthRule)

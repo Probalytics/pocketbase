@@ -19,6 +19,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 const (
@@ -190,6 +191,36 @@ func newMockWorkOSServer() *httptest.Server {
 				return
 			}
 			success("sso@example.com", mockWorkOSUsers["sso@example.com"], "SSO")
+		case "refresh_token":
+			rt := params["refresh_token"]
+			// a revoked/expired WorkOS session
+			if rt == "wos_refresh_revoked" {
+				writeErr(w, 400, "invalid_grant", "The refresh token is invalid.")
+				return
+			}
+			// resolve the user by the "wos_refresh_<id>[_rN]" token issued by
+			// success()/prior rotations
+			var email string
+			var u mockWorkOSUser
+			for e, cand := range mockWorkOSUsers {
+				if strings.HasPrefix(rt, "wos_refresh_"+cand.id) {
+					email, u = e, cand
+					break
+				}
+			}
+			if email == "" {
+				writeErr(w, 400, "invalid_grant", "The refresh token is invalid.")
+				return
+			}
+			// mirror WorkOS refresh token rotation - return a NEW refresh token
+			writeJSON(w, 200, map[string]any{
+				"access_token":          "wos_access_" + u.id + "_r2",
+				"refresh_token":         "wos_refresh_" + u.id + "_r2",
+				"token_type":            "Bearer",
+				"user":                  mockWorkOSUserPayload(email, u),
+				"organization_id":       u.orgId,
+				"authentication_method": "RefreshToken",
+			})
 		default:
 			writeErr(w, 400, "unsupported_grant_type", "Unsupported grant type.")
 		}
@@ -1544,4 +1575,212 @@ func TestWorkOSPortalLink(t *testing.T) {
 	for _, scenario := range scenarios {
 		scenario.Test(t)
 	}
+}
+
+// workosRefreshTestKey is a valid 32-char AES key for the encrypted
+// refresh-token storage in the refresh-sync tests.
+const workosRefreshTestKey = "1234567890abcdef1234567890abcdef"
+
+// newWorkOSRefreshTestMux builds a mux-backed test app configured for the
+// WorkOS auth-refresh session syncing and returns a send() helper.
+//
+// It is intentionally NOT parallel-safe (the caller sets the app encryption
+// key via t.Setenv), so callers must not mark themselves parallel.
+func newWorkOSRefreshTestMux(t testing.TB, apiURL string, syncOnRefresh, exposeTokens bool) (*tests.TestApp, func(method, url, token, body string) *httptest.ResponseRecorder) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Cleanup)
+
+	setupWorkOSApp(t, app, apiURL)
+	app.Settings().WorkOS.SyncOnRefresh = syncOnRefresh
+	app.Settings().WorkOS.ExposeTokens = exposeTokens
+
+	pbRouter, err := apis.NewRouter(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux, err := pbRouter.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	send := func(method, url, token, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, url, strings.NewReader(body))
+		req.Header.Set("content-type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", token)
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	return app, send
+}
+
+type workosAuthRespBody struct {
+	Token string `json:"token"`
+	Meta  struct {
+		WorkOS map[string]any `json:"workos"`
+	} `json:"meta"`
+}
+
+func parseWorkOSAuthResp(t testing.TB, rec *httptest.ResponseRecorder) workosAuthRespBody {
+	t.Helper()
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var out workosAuthRespBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("failed to parse auth response: %v (%s)", err, rec.Body.String())
+	}
+	if out.Token == "" {
+		t.Fatalf("missing token in auth response: %s", rec.Body.String())
+	}
+	return out
+}
+
+func TestRecordAuthWorkOSRefreshSync(t *testing.T) {
+	// not parallel: mutates the app encryption key env var
+	t.Setenv("pb_test_env", workosRefreshTestKey)
+
+	srv := newMockWorkOSServer()
+	defer srv.Close()
+
+	app, send := newWorkOSRefreshTestMux(t, srv.URL, true, false)
+
+	// 1. password login persists the encrypted refresh token
+	login := parseWorkOSAuthResp(t, send(http.MethodPost, "/api/collections/users/auth-with-password", "", `{"identity":"org@example.com","password":"`+mockWorkOSPassword+`"}`))
+
+	// the hidden field must not leak in the login response
+	if strings.Contains(login.Meta.WorkOS["authenticationMethod"].(string), "wos_refresh") ||
+		strings.Contains(string(mustJSON(t, login.Meta.WorkOS)), "wos_refresh") {
+		t.Fatalf("refresh token leaked in the auth response meta: %v", login.Meta.WorkOS)
+	}
+
+	record, err := app.FindAuthRecordByEmail("users", "org@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored := record.GetString("workosRefreshToken")
+	if stored == "" {
+		t.Fatal("expected a stored workosRefreshToken after login")
+	}
+	if strings.Contains(stored, "wos_refresh_") {
+		t.Fatalf("refresh token appears to be stored in plaintext: %q", stored)
+	}
+	dec, err := security.Decrypt(stored, workosRefreshTestKey)
+	if err != nil {
+		t.Fatalf("stored refresh token is not decryptable: %v", err)
+	}
+	if string(dec) != "wos_refresh_user_wos_org" {
+		t.Fatalf("unexpected stored refresh token %q", string(dec))
+	}
+
+	// 2. auth-refresh re-validates the WorkOS session, rotates + re-persists
+	refresh := parseWorkOSAuthResp(t, send(http.MethodPost, "/api/collections/users/auth-refresh", login.Token, ""))
+	if m := refresh.Meta.WorkOS["authenticationMethod"]; m != "RefreshToken" {
+		t.Fatalf("expected refreshed meta authenticationMethod=RefreshToken, got %v", m)
+	}
+
+	record, err = app.FindAuthRecordByEmail("users", "org@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, err = security.Decrypt(record.GetString("workosRefreshToken"), workosRefreshTestKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(dec) != "wos_refresh_user_wos_org_r2" {
+		t.Fatalf("expected the rotated refresh token to be persisted, got %q", string(dec))
+	}
+}
+
+func TestRecordAuthWorkOSRefreshRejectedWhenSessionRevoked(t *testing.T) {
+	t.Setenv("pb_test_env", workosRefreshTestKey)
+
+	srv := newMockWorkOSServer()
+	defer srv.Close()
+
+	app, send := newWorkOSRefreshTestMux(t, srv.URL, true, false)
+
+	login := parseWorkOSAuthResp(t, send(http.MethodPost, "/api/collections/users/auth-with-password", "", `{"identity":"org@example.com","password":"`+mockWorkOSPassword+`"}`))
+
+	// simulate WorkOS having revoked the session by storing a token the
+	// mock rejects with invalid_grant
+	record, err := app.FindAuthRecordByEmail("users", "org@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := security.Encrypt([]byte("wos_refresh_revoked"), workosRefreshTestKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Set("workosRefreshToken", enc)
+	if err = app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := send(http.MethodPost, "/api/collections/users/auth-refresh", login.Token, "")
+	if rec.Code != 401 {
+		t.Fatalf("expected the refresh to be rejected with 401, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRecordAuthWorkOSRefreshExposeTokens(t *testing.T) {
+	t.Setenv("pb_test_env", workosRefreshTestKey)
+
+	srv := newMockWorkOSServer()
+	defer srv.Close()
+
+	_, send := newWorkOSRefreshTestMux(t, srv.URL, true, true)
+
+	login := parseWorkOSAuthResp(t, send(http.MethodPost, "/api/collections/users/auth-with-password", "", `{"identity":"org@example.com","password":"`+mockWorkOSPassword+`"}`))
+
+	if login.Meta.WorkOS["accessToken"] != "wos_access_user_wos_org" {
+		t.Fatalf("expected the access token to be exposed in the meta, got %v", login.Meta.WorkOS["accessToken"])
+	}
+	if login.Meta.WorkOS["refreshToken"] != "wos_refresh_user_wos_org" {
+		t.Fatalf("expected the refresh token to be exposed in the meta, got %v", login.Meta.WorkOS["refreshToken"])
+	}
+}
+
+func TestRecordAuthWorkOSRefreshNoEncryptionKey(t *testing.T) {
+	// explicitly clear the encryption key -> the refresh token must not be
+	// written in plaintext and the refresh must still succeed (fail open)
+	t.Setenv("pb_test_env", "")
+
+	srv := newMockWorkOSServer()
+	defer srv.Close()
+
+	app, send := newWorkOSRefreshTestMux(t, srv.URL, true, false)
+
+	login := parseWorkOSAuthResp(t, send(http.MethodPost, "/api/collections/users/auth-with-password", "", `{"identity":"org@example.com","password":"`+mockWorkOSPassword+`"}`))
+
+	record, err := app.FindAuthRecordByEmail("users", "org@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := record.GetString("workosRefreshToken"); v != "" {
+		t.Fatalf("expected no stored refresh token without an encryption key, got %q", v)
+	}
+
+	// with nothing stored, the refresh should still proceed (fail open)
+	rec := send(http.MethodPost, "/api/collections/users/auth-refresh", login.Token, "")
+	if rec.Code != 200 {
+		t.Fatalf("expected the refresh to proceed (200) with no stored token, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func mustJSON(t testing.TB, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

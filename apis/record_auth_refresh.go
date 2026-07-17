@@ -18,6 +18,17 @@ func recordAuthRefresh(e *core.RequestEvent) error {
 	event.Record = record
 
 	return e.App.OnRecordAuthRefreshRequest().Trigger(event, func(e *core.RecordAuthRefreshRequestEvent) error {
+		// re-validate the WorkOS session and re-sync the record/org state
+		// for delegated collections (opt-in via settings.WorkOS.SyncOnRefresh)
+		var meta any
+		if workosDelegated(e.App, e.Collection) && e.App.Settings().WorkOS.SyncOnRefresh {
+			var syncErr error
+			meta, syncErr = workosRefreshSync(e.RequestEvent, e.Collection, e.Record)
+			if syncErr != nil {
+				return syncErr
+			}
+		}
+
 		token := getAuthTokenFromRequest(e.RequestEvent)
 
 		// skip token renewal if the token's payload doesn't explicitly allow it (e.g. impersonate tokens)
@@ -30,6 +41,6 @@ func recordAuthRefresh(e *core.RequestEvent) error {
 			}
 		}
 
-		return recordAuthResponse(e.RequestEvent, e.Record, token, "", nil)
+		return recordAuthResponse(e.RequestEvent, e.Record, token, "", meta)
 	})
 }
