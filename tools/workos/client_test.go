@@ -639,6 +639,75 @@ func TestAPIErrorParsing(t *testing.T) {
 	}
 }
 
+func TestAPIErrorStepUpHelpers(t *testing.T) {
+	t.Parallel()
+
+	scenarios := []struct {
+		name                              string
+		response                          string
+		expectedSSORequired               bool
+		expectedEmailVerificationRequired bool
+		expectedEmailVerificationId       string
+	}{
+		{
+			"sso_required error (OAuth error shape)",
+			`{"error":"sso_required","error_description":"User must authenticate using one of the matching connections.","connection_ids":["conn_123"]}`,
+			true,
+			false,
+			"",
+		},
+		{
+			"organization_selection_required error",
+			`{"error":"organization_selection_required","error_description":"The user must choose an organization."}`,
+			true,
+			false,
+			"",
+		},
+		{
+			"email_verification_required error",
+			`{"code":"email_verification_required","message":"Email ownership must be verified before authentication.","pending_authentication_token":"pending_123","email_verification_id":"email_verification_123"}`,
+			false,
+			true,
+			"email_verification_123",
+		},
+		{
+			"unrelated error",
+			`{"error":"invalid_credentials","error_description":"Invalid email or password."}`,
+			false,
+			false,
+			"",
+		},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, s.response)
+			}))
+			defer srv.Close()
+
+			_, err := testClient(srv.URL).AuthenticateWithPassword(context.Background(), "test@example.com", "secret", "", "")
+
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("Expected *APIError, got %T (%v)", err, err)
+			}
+
+			if apiErr.IsSSORequired() != s.expectedSSORequired {
+				t.Errorf("Expected IsSSORequired() %v, got %v", s.expectedSSORequired, apiErr.IsSSORequired())
+			}
+			if apiErr.IsEmailVerificationRequired() != s.expectedEmailVerificationRequired {
+				t.Errorf("Expected IsEmailVerificationRequired() %v, got %v", s.expectedEmailVerificationRequired, apiErr.IsEmailVerificationRequired())
+			}
+			if apiErr.EmailVerificationId != s.expectedEmailVerificationId {
+				t.Errorf("Expected EmailVerificationId %q, got %q", s.expectedEmailVerificationId, apiErr.EmailVerificationId)
+			}
+		})
+	}
+}
+
 func TestDefaultBaseURL(t *testing.T) {
 	t.Parallel()
 

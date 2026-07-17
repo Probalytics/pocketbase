@@ -21,20 +21,29 @@ fi
 ok "0: API key valid, api.workos.com reachable"
 
 # 1. fresh server
+pkill -f 'pbworkos serve' 2>/dev/null && sleep 1  # leftover server from a previous run
 rm -rf "$S/real/pb_data"; mkdir -p "$S/real"
 cp -r "$REPO/examples/workos/pb_public" "$S/real/pb_public" 2>/dev/null || true
 (cd "$REPO" && go build -o "$S/real/pbworkos" ./examples/workos) || { echo "build failed"; exit 1; }
 (cd "$S/real" && ./pbworkos superuser upsert admin@example.com Admin12345! --dir=./pb_data >/dev/null 2>&1)
-(cd "$S/real" && ./pbworkos serve --dir=./pb_data --http=127.0.0.1:8091 >"$S/real/server.log" 2>&1) &
+(cd "$S/real" && exec ./pbworkos serve --dir=./pb_data --http=127.0.0.1:8091 >"$S/real/server.log" 2>&1) &
 SRV=$!; trap 'kill $SRV 2>/dev/null' EXIT
 sleep 2
+if ! curl -s --max-time 5 -o /dev/null "$PB/api/health"; then
+  echo "ABORT: the test server did not start:"; tail -5 "$S/real/server.log"; exit 1
+fi
 
 TOKEN=$(curl -s -X POST $PB/api/collections/_superusers/auth-with-password -H 'Content-Type: application/json' \
   -d '{"identity":"admin@example.com","password":"Admin12345!"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
 curl -s -X PATCH $PB/api/settings -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"workos\":{\"enabled\":true,\"clientId\":\"$CLIENT_ID\",\"apiKey\":\"$API_KEY\",\"apiURL\":\"$WOS\"}}" >/dev/null
 
-EMAIL="pbfork.$(date +%s)@example.com"
+# note: a unique non-example.com domain is used because WorkOS test
+# environments ship with a default SSO connection matching example.com,
+# which rejects password logins with an "sso_required" error
+# (that mapping is tested separately at the end)
+TS=$(date +%s)
+EMAIL="pbfork.$TS@pbfork-$TS.com"
 PW='R3al!yStr0ngPass'
 
 # 2. signup -> real WorkOS CreateUser
@@ -46,9 +55,24 @@ WUID=$(curl -s "$WOS/user_management/users?email=$EMAIL" -H "Authorization: Bear
 [ -n "$WUID" ] && ok "2: user exists in WorkOS ($WUID)" || bad "2: user not found in WorkOS" ""
 
 # 3. password auth via WorkOS
+#    (environments with "Require email verification" enabled reject the first
+#    attempt with a dedicated 403 - the user is then marked verified via the
+#    management API, standing in for the emailed verification code)
 AUTH=$(curl -s -w '\n%{http_code}' -X POST $PB/api/collections/users/auth-with-password -H 'Content-Type: application/json' \
   -d "{\"identity\":\"$EMAIL\",\"password\":\"$PW\"}")
-[ "$(echo "$AUTH" | tail -1)" = 200 ] && ok "3: password auth against real WorkOS" || bad "3: password auth" "$(echo "$AUTH" | head -c 300)"
+AUTHC=$(echo "$AUTH" | tail -1)
+if [ "$AUTHC" = 200 ]; then
+  ok "3: password auth against real WorkOS"
+elif [ "$AUTHC" = 403 ] && echo "$AUTH" | grep -q "email must be verified"; then
+  ok "3a: unverified email rejected with dedicated 403 (env requires email verification)"
+  curl -s -X PUT "$WOS/user_management/users/$WUID" -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' \
+    -d '{"email_verified":true}' >/dev/null
+  AUTH=$(curl -s -w '\n%{http_code}' -X POST $PB/api/collections/users/auth-with-password -H 'Content-Type: application/json' \
+    -d "{\"identity\":\"$EMAIL\",\"password\":\"$PW\"}")
+  [ "$(echo "$AUTH" | tail -1)" = 200 ] && ok "3: password auth against real WorkOS (after email verification)" || bad "3: password auth after verification" "$(echo "$AUTH" | head -c 300)"
+else
+  bad "3: password auth" "$(echo "$AUTH" | head -c 300)"
+fi
 
 WRONG=$(curl -s -o /dev/null -w '%{http_code}' -X POST $PB/api/collections/users/auth-with-password -H 'Content-Type: application/json' \
   -d "{\"identity\":\"$EMAIL\",\"password\":\"nope-nope\"}")
@@ -58,14 +82,16 @@ WRONG=$(curl -s -o /dev/null -w '%{http_code}' -X POST $PB/api/collections/users
 #    (the API returns the code in the response so apps can send custom emails)
 OTP=$(curl -s -X POST $PB/api/collections/users/request-otp -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\"}" \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["otpId"])')
-CODE=$(curl -s -X POST "$WOS/user_management/magic_auth" -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$EMAIL\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("code",""))')
+MAGICRESP=$(curl -s -X POST "$WOS/user_management/magic_auth" -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\"}")
+CODE=$(echo "$MAGICRESP" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("code",""))')
 if [ -n "$CODE" ]; then
   MAGIC=$(curl -s -w '\n%{http_code}' -X POST $PB/api/collections/users/auth-with-otp -H 'Content-Type: application/json' \
     -d "{\"otpId\":\"$OTP\",\"password\":\"$CODE\"}")
   [ "$(echo "$MAGIC" | tail -1)" = 200 ] && ok "5: magic auth code login against real WorkOS" || bad "5: magic auth" "$(echo "$MAGIC" | head -c 300)"
 else
-  echo "SKIP  5: magic auth (code not exposed by API in this environment)"
+  REASON=$(echo "$MAGICRESP" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("error_description") or d.get("message") or "code not exposed by API")')
+  echo "SKIP  5: magic auth ($REASON - enable Magic Auth in the WorkOS dashboard under Authentication)"
 fi
 
 # 5. password reset request (WorkOS sends the email; we just verify 204)
@@ -91,6 +117,20 @@ if [ -n "$ORG" ]; then
   echo "$PL" | grep -q '"link"' && ok "10: real Admin Portal link generated" || bad "10: portal link" "$(echo "$PL" | head -c 200)"
 else
   echo "SKIP  7-10: could not create a WorkOS organization"
+fi
+
+# 7. sso_required mapping: WorkOS test environments have a default SSO
+#    connection matching example.com, so a password login for that domain
+#    must surface the fork's dedicated 403 "SSO required" error
+EMAIL2="pbfork.sso.$TS@example.com"
+curl -s -X POST $PB/api/collections/users/records -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL2\",\"password\":\"$PW\",\"passwordConfirm\":\"$PW\"}" >/dev/null
+SSOAUTH=$(curl -s -w '\n%{http_code}' -X POST $PB/api/collections/users/auth-with-password -H 'Content-Type: application/json' \
+  -d "{\"identity\":\"$EMAIL2\",\"password\":\"$PW\"}")
+if [ "$(echo "$SSOAUTH" | tail -1)" = 403 ] && echo "$SSOAUTH" | grep -q "SSO authentication is required"; then
+  ok "11: sso_required mapped to a dedicated 403 SSO error"
+else
+  echo "SKIP  11: sso_required mapping (no SSO connection matching example.com in this environment? got: $(echo "$SSOAUTH" | head -c 200))"
 fi
 
 echo; echo "$PASS passed, $FAIL failed"

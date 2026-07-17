@@ -200,6 +200,10 @@ type APIError struct {
 	// is obtained by challenging one of the factors and is then passed to
 	// Client.AuthenticateWithTOTP.
 	AuthenticationFactors []AuthenticationFactor
+
+	// EmailVerificationId is set on "email_verification_required" errors
+	// and identifies the pending email verification of the user.
+	EmailVerificationId string
 }
 
 // Error implements the [error] interface.
@@ -223,6 +227,32 @@ func (e *APIError) IsMFARequired() bool {
 	return e.Code == "mfa_challenge"
 }
 
+// IsSSORequired reports whether the error indicates that the user must
+// authenticate via SSO because their email domain matches an active
+// SSO connection (password and other direct grants are rejected).
+//
+// The real API returns it in the OAuth error shape:
+//
+//	{"error": "sso_required", "error_description": "...", "connection_ids": [...]}
+func (e *APIError) IsSSORequired() bool {
+	return e.Code == "sso_required" || e.Code == "organization_selection_required"
+}
+
+// IsEmailVerificationRequired reports whether the error indicates that
+// the user's email ownership must be verified before authenticating
+// (returned by environments with the "Require email verification"
+// dashboard setting enabled):
+//
+//	{
+//	  "code": "email_verification_required",
+//	  "message": "...",
+//	  "pending_authentication_token": "...",
+//	  "email_verification_id": "email_verification_..."
+//	}
+func (e *APIError) IsEmailVerificationRequired() bool {
+	return e.Code == "email_verification_required"
+}
+
 func parseAPIError(status int, body []byte) *APIError {
 	apiErr := &APIError{
 		Status:  status,
@@ -236,6 +266,7 @@ func parseAPIError(status int, body []byte) *APIError {
 		ErrorDescription           string                 `json:"error_description"`
 		PendingAuthenticationToken string                 `json:"pending_authentication_token"`
 		AuthenticationFactors      []AuthenticationFactor `json:"authentication_factors"`
+		EmailVerificationId        string                 `json:"email_verification_id"`
 	}
 
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -245,6 +276,7 @@ func parseAPIError(status int, body []byte) *APIError {
 
 	apiErr.PendingAuthenticationToken = payload.PendingAuthenticationToken
 	apiErr.AuthenticationFactors = payload.AuthenticationFactors
+	apiErr.EmailVerificationId = payload.EmailVerificationId
 
 	switch {
 	case payload.Code != "":

@@ -40,15 +40,18 @@ type mockWorkOSUser struct {
 	orgId    string
 	verified bool
 	mfa      bool
+	ssoOnly  bool // the email domain matches an active SSO connection
 }
 
 var mockWorkOSUsers = map[string]mockWorkOSUser{
-	"test@example.com":  {id: "user_wos_test", first: "Test", last: "User", verified: true},
-	"test2@example.com": {id: "user_wos_test2", verified: true},
-	"new@example.com":   {id: "user_wos_new", first: "New", last: "User", verified: true},
-	"org@example.com":   {id: "user_wos_org", orgId: "org_wos_123", verified: true},
-	"mfa@example.com":   {id: "user_wos_mfa", verified: true, mfa: true},
-	"sso@example.com":   {id: "user_wos_sso", orgId: "org_wos_123", verified: true},
+	"test@example.com":       {id: "user_wos_test", first: "Test", last: "User", verified: true},
+	"test2@example.com":      {id: "user_wos_test2", verified: true},
+	"new@example.com":        {id: "user_wos_new", first: "New", last: "User", verified: true},
+	"org@example.com":        {id: "user_wos_org", orgId: "org_wos_123", verified: true},
+	"mfa@example.com":        {id: "user_wos_mfa", verified: true, mfa: true},
+	"sso@example.com":        {id: "user_wos_sso", orgId: "org_wos_123", verified: true},
+	"ssoonly@example.com":    {id: "user_wos_ssoonly", verified: true, ssoOnly: true},
+	"unverified@example.com": {id: "user_wos_unverified", verified: false},
 }
 
 func mockWorkOSUserPayload(email string, u mockWorkOSUser) map[string]any {
@@ -130,8 +133,29 @@ func newMockWorkOSServer() *httptest.Server {
 		case "password":
 			email := params["email"]
 			u, ok := mockWorkOSUsers[email]
+			if ok && u.ssoOnly {
+				// matches the real API behavior - the SSO requirement is
+				// reported (in the OAuth error shape) before any password check
+				writeJSON(w, 400, map[string]any{
+					"error":             "sso_required",
+					"error_description": "User must authenticate using one of the matching connections.",
+					"email":             email,
+					"connection_ids":    []string{"conn_wos_1"},
+				})
+				return
+			}
 			if !ok || params["password"] != mockWorkOSPassword {
 				writeErr(w, 400, "invalid_credentials", "Invalid email or password.")
+				return
+			}
+			if !u.verified {
+				writeJSON(w, 400, map[string]any{
+					"code":                         "email_verification_required",
+					"message":                      "Email ownership must be verified before authentication.",
+					"email":                        email,
+					"pending_authentication_token": "pending_token_verify",
+					"email_verification_id":        "email_verification_1",
+				})
 				return
 			}
 			if u.mfa {
@@ -475,6 +499,24 @@ func TestRecordAuthWithPasswordWorkOS(t *testing.T) {
 				`"id":"auth_factor_1"`,
 				`"type":"totp"`,
 			},
+		},
+		{
+			Name:            "delegated collection with SSO-only email domain (sso_required)",
+			Method:          http.MethodPost,
+			URL:             "/api/collections/users/auth-with-password",
+			Body:            strings.NewReader(`{"identity":"ssoonly@example.com","password":"` + mockWorkOSPassword + `"}`),
+			BeforeTestFunc:  setup,
+			ExpectedStatus:  403,
+			ExpectedContent: []string{`"data":{}`, `SSO authentication is required`},
+		},
+		{
+			Name:            "delegated collection with unverified email (email_verification_required)",
+			Method:          http.MethodPost,
+			URL:             "/api/collections/users/auth-with-password",
+			Body:            strings.NewReader(`{"identity":"unverified@example.com","password":"` + mockWorkOSPassword + `"}`),
+			BeforeTestFunc:  setup,
+			ExpectedStatus:  403,
+			ExpectedContent: []string{`"data":{}`, `email must be verified`},
 		},
 		{
 			Name:           "delegated collection with organization linking",

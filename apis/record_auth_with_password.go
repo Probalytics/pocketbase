@@ -126,23 +126,35 @@ func workosAuthWithPassword(e *core.RequestEvent, collection *core.Collection, f
 	)
 	if err != nil {
 		var apiErr *workos.APIError
-		if errors.As(err, &apiErr) && apiErr.IsMFARequired() {
-			// mirror the native MFA response shape (see checkMFA in record_helpers.go)
-			// with the enrolled WorkOS factors listed for the follow-up auth-with-mfa call
-			factors := make([]map[string]string, 0, len(apiErr.AuthenticationFactors))
-			for _, factor := range apiErr.AuthenticationFactors {
-				factors = append(factors, map[string]string{
-					"id":   factor.Id,
-					"type": factor.Type,
+		if errors.As(err, &apiErr) {
+			switch {
+			case apiErr.IsMFARequired():
+				// mirror the native MFA response shape (see checkMFA in record_helpers.go)
+				// with the enrolled WorkOS factors listed for the follow-up auth-with-mfa call
+				factors := make([]map[string]string, 0, len(apiErr.AuthenticationFactors))
+				for _, factor := range apiErr.AuthenticationFactors {
+					factors = append(factors, map[string]string{
+						"id":   factor.Id,
+						"type": factor.Type,
+					})
+				}
+
+				e.JSON(http.StatusUnauthorized, map[string]any{
+					"mfaId":   apiErr.PendingAuthenticationToken,
+					"factors": factors,
 				})
+
+				return ErrMFA
+			case apiErr.IsSSORequired():
+				// the email domain matches an active SSO connection - the client
+				// must go through the auth-with-workos SSO flow instead
+				return e.ForbiddenError("SSO authentication is required for this account.", err)
+			case apiErr.IsEmailVerificationRequired():
+				// the WorkOS environment requires verified email ownership -
+				// the client must complete the request-verification/confirm-verification
+				// flow before authenticating with a password
+				return e.ForbiddenError("The account email must be verified before authenticating.", err)
 			}
-
-			e.JSON(http.StatusUnauthorized, map[string]any{
-				"mfaId":   apiErr.PendingAuthenticationToken,
-				"factors": factors,
-			})
-
-			return ErrMFA
 		}
 
 		return e.BadRequestError("Failed to authenticate.", err)
