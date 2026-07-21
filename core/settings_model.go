@@ -132,6 +132,7 @@ type settings struct {
 	TrustedProxy TrustedProxyConfig `form:"trustedProxy" json:"trustedProxy"`
 	Batch        BatchConfig        `form:"batch" json:"batch"`
 	Logs         LogsConfig         `form:"logs" json:"logs"`
+	WorkOS       WorkOSConfig       `form:"workos" json:"workos"`
 }
 
 // Settings defines the PocketBase app settings.
@@ -173,6 +174,10 @@ func newDefaultSettings() *Settings {
 				Enabled:     false,
 				MaxRequests: 50,
 				Timeout:     3,
+			},
+			WorkOS: WorkOSConfig{
+				Enabled: false,
+				APIURL:  "https://api.workos.com",
 			},
 			RateLimits: RateLimitsConfig{
 				Enabled: false, // @todo once tested enough enable by default for new installations
@@ -300,6 +305,7 @@ func (s *Settings) PostValidate(ctx context.Context, app App) error {
 		validation.Field(&s.Batch),
 		validation.Field(&s.RateLimits),
 		validation.Field(&s.TrustedProxy),
+		validation.Field(&s.WorkOS),
 	)
 }
 
@@ -346,6 +352,8 @@ func (s *Settings) MarshalJSON() ([]byte, error) {
 		&copy.SMTP.Password,
 		&copy.S3.Secret,
 		&copy.Backups.S3.Secret,
+		&copy.WorkOS.APIKey,
+		&copy.WorkOS.WebhookSecret,
 	}
 
 	// mask all sensitive fields
@@ -455,6 +463,54 @@ func (c S3Config) Validate() error {
 		validation.Field(&c.Region, validation.When(c.Enabled, validation.Required)),
 		validation.Field(&c.AccessKey, validation.When(c.Enabled, validation.Required)),
 		validation.Field(&c.Secret, validation.When(c.Enabled, validation.Required)),
+	)
+}
+
+// -------------------------------------------------------------------
+
+type WorkOSConfig struct {
+	Enabled bool `form:"enabled" json:"enabled"`
+
+	// ClientId is the WorkOS environment Client ID
+	// (see https://dashboard.workos.com -> API Keys).
+	ClientId string `form:"clientId" json:"clientId"`
+
+	// APIKey is the WorkOS environment secret API key.
+	APIKey string `form:"apiKey" json:"apiKey,omitempty"`
+
+	// WebhookSecret is the signing secret used to verify
+	// incoming WorkOS webhook requests.
+	WebhookSecret string `form:"webhookSecret" json:"webhookSecret,omitempty"`
+
+	// APIURL is the base WorkOS API url
+	// (default to https://api.workos.com; overridable for tests).
+	APIURL string `form:"apiURL" json:"apiURL"`
+
+	// SyncOnRefresh enables re-validating the WorkOS session on every
+	// PocketBase auth-refresh of a delegated collection: the stored
+	// WorkOS refresh token is exchanged for a fresh one and the local
+	// record/organization state is re-synced. If WorkOS rejects the
+	// refresh (revoked/expired session, suspended or deleted user) the
+	// PocketBase refresh is rejected too.
+	//
+	// Persisting the refresh token requires an app encryption key
+	// (the --encryptionEnv key); without it the token is not stored and
+	// the re-validation is skipped.
+	SyncOnRefresh bool `form:"syncOnRefresh" json:"syncOnRefresh"`
+
+	// ExposeTokens includes the raw WorkOS access and refresh tokens in
+	// the "workos" auth response meta so that clients can call the WorkOS
+	// APIs directly. Off by default since it surfaces a long-lived
+	// credential to the client.
+	ExposeTokens bool `form:"exposeTokens" json:"exposeTokens"`
+}
+
+// Validate makes WorkOSConfig validatable by implementing [validation.Validatable] interface.
+func (c WorkOSConfig) Validate() error {
+	return validation.ValidateStruct(&c,
+		validation.Field(&c.ClientId, validation.When(c.Enabled, validation.Required)),
+		validation.Field(&c.APIKey, validation.When(c.Enabled, validation.Required)),
+		validation.Field(&c.APIURL, is.URL),
 	)
 }
 

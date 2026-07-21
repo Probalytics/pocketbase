@@ -1,6 +1,7 @@
 package apis
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -29,6 +30,11 @@ func recordRequestVerification(e *core.RequestEvent) error {
 	}
 	if err = form.validate(); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while validating the submitted data.", err))
+	}
+
+	// delegate to WorkOS (it emails the verification code)
+	if workosDelegated(e.App, collection) {
+		return workosRequestVerification(e, collection, form.Email)
 	}
 
 	record, err := e.App.FindAuthRecordByEmail(collection, form.Email)
@@ -72,6 +78,58 @@ func recordRequestVerification(e *core.RequestEvent) error {
 			return e.NoContent(http.StatusNoContent)
 		})
 	})
+}
+
+// workosRequestVerification asks WorkOS to email a verification code
+// to the specified user (responding always with 204 as a very basic
+// emails enumeration protection).
+func workosRequestVerification(e *core.RequestEvent, collection *core.Collection, email string) error {
+	record, err := e.App.FindAuthRecordByEmail(collection, email)
+	if err != nil {
+		// eagerly write 204 response as a very basic measure against emails enumeration
+		e.NoContent(http.StatusNoContent)
+		return fmt.Errorf("failed to fetch %s record with email %s: %w", collection.Name, email, err)
+	}
+
+	if record.Verified() {
+		return e.NoContent(http.StatusNoContent)
+	}
+
+	resendKey := getVerificationResendKey(record)
+	if e.App.Store().Has(resendKey) {
+		// eagerly write 204 response as a very basic measure against emails enumeration
+		e.NoContent(http.StatusNoContent)
+		return errors.New("try again later - you've already requested a verification email")
+	}
+
+	// run in background because we don't need to show the result to the client
+	app := e.App
+	client := workosClientFromApp(e.App)
+	workosUserId := record.GetString("workosUserId")
+	routine.FireAndForget(func() {
+		ctx := context.Background()
+
+		if workosUserId == "" {
+			wUser, err := client.GetUserByEmail(ctx, email)
+			if err != nil {
+				app.Logger().Error("Failed to resolve WorkOS user for verification email", "error", err, "email", email)
+				return
+			}
+			workosUserId = wUser.Id
+		}
+
+		if err := client.SendVerificationEmail(ctx, workosUserId); err != nil {
+			app.Logger().Error("Failed to send WorkOS verification email", "error", err, "email", email)
+			return
+		}
+
+		app.Store().Set(resendKey, struct{}{})
+		time.AfterFunc(2*time.Minute, func() {
+			app.Store().Remove(resendKey)
+		})
+	})
+
+	return e.NoContent(http.StatusNoContent)
 }
 
 // -------------------------------------------------------------------

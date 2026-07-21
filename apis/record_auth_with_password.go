@@ -3,6 +3,7 @@ package apis
 import (
 	"database/sql"
 	"errors"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/list"
+	"github.com/pocketbase/pocketbase/tools/workos"
 )
 
 func recordAuthWithPassword(e *core.RequestEvent) error {
@@ -20,7 +22,10 @@ func recordAuthWithPassword(e *core.RequestEvent) error {
 		return err
 	}
 
-	if !collection.PasswordAuth.Enabled {
+	// password auth is implicitly available for WorkOS delegated collections
+	isWorkOSDelegated := workosDelegated(e.App, collection)
+
+	if !collection.PasswordAuth.Enabled && !isWorkOSDelegated {
 		return e.ForbiddenError("The collection is not configured to allow password authentication.", nil)
 	}
 
@@ -33,6 +38,18 @@ func recordAuthWithPassword(e *core.RequestEvent) error {
 	}
 
 	e.Set(core.RequestEventKeyInfoContext, core.RequestInfoContextPasswordAuth)
+
+	// delegate the email+password authentication to WorkOS
+	// (non-email identities fall through to the native flow, e.g. legacy username logins)
+	if isWorkOSDelegated &&
+		(form.IdentityField == "" || form.IdentityField == core.FieldNameEmail) &&
+		is.EmailFormat.Validate(form.Identity) == nil {
+		return workosAuthWithPassword(e, collection, form)
+	}
+
+	if !collection.PasswordAuth.Enabled {
+		return e.ForbiddenError("The collection is not configured to allow password authentication.", nil)
+	}
 
 	var foundRecord *core.Record
 	var foundErr error
@@ -95,6 +112,62 @@ func recordAuthWithPassword(e *core.RequestEvent) error {
 
 		return RecordAuthResponse(e.RequestEvent, e.Record, core.MFAMethodPassword, nil)
 	})
+}
+
+// workosAuthWithPassword performs an email+password authentication
+// against WorkOS User Management on behalf of the specified collection.
+func workosAuthWithPassword(e *core.RequestEvent, collection *core.Collection, form *authWithPasswordForm) error {
+	authResp, err := workosClientFromApp(e.App).AuthenticateWithPassword(
+		e.Request.Context(),
+		form.Identity,
+		form.Password,
+		e.RealIP(),
+		e.Request.UserAgent(),
+	)
+	if err != nil {
+		var apiErr *workos.APIError
+		if errors.As(err, &apiErr) {
+			switch {
+			case apiErr.IsMFARequired():
+				// mirror the native MFA response shape (see checkMFA in record_helpers.go)
+				// with the enrolled WorkOS factors listed for the follow-up auth-with-mfa call
+				factors := make([]map[string]string, 0, len(apiErr.AuthenticationFactors))
+				for _, factor := range apiErr.AuthenticationFactors {
+					factors = append(factors, map[string]string{
+						"id":   factor.Id,
+						"type": factor.Type,
+					})
+				}
+
+				e.JSON(http.StatusUnauthorized, map[string]any{
+					"mfaId":   apiErr.PendingAuthenticationToken,
+					"factors": factors,
+				})
+
+				return ErrMFA
+			case apiErr.IsSSORequired():
+				// the email domain matches an active SSO connection - the client
+				// must go through the auth-with-workos SSO flow instead
+				return e.ForbiddenError("SSO authentication is required for this account.", err)
+			case apiErr.IsEmailVerificationRequired():
+				// the WorkOS environment requires verified email ownership -
+				// the client must complete the request-verification/confirm-verification
+				// flow before authenticating with a password
+				return e.ForbiddenError("The account email must be verified before authenticating.", err)
+			}
+		}
+
+		return e.BadRequestError("Failed to authenticate.", err)
+	}
+
+	record, err := authWorkOSRecord(e, collection, &authResp.User, authResp.OrganizationId)
+	if err != nil {
+		return firstApiError(err, e.BadRequestError("Failed to authenticate.", err))
+	}
+
+	workosPersistRefreshToken(e.App, record, authResp.RefreshToken)
+
+	return RecordAuthResponse(e, record, core.MFAMethodPassword, workosAuthMeta(e.App, authResp))
 }
 
 // -------------------------------------------------------------------

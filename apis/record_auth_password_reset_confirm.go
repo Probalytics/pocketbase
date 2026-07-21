@@ -22,6 +22,13 @@ func recordConfirmPasswordReset(e *core.RequestEvent) error {
 	if err = e.BindBody(form); err != nil {
 		return e.BadRequestError("An error occurred while loading the submitted data.", err)
 	}
+
+	// delegate to WorkOS (note: the token is a WorkOS issued one,
+	// i.e. the native PB token validations don't apply)
+	if workosDelegated(e.App, collection) {
+		return workosConfirmPasswordReset(e, collection, form)
+	}
+
 	if err = form.validate(); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while validating the submitted data.", err))
 	}
@@ -58,6 +65,50 @@ func recordConfirmPasswordReset(e *core.RequestEvent) error {
 			return e.NoContent(http.StatusNoContent)
 		})
 	})
+}
+
+// workosConfirmPasswordReset sets a new user password using a WorkOS
+// issued password reset token and best-effort syncs the local record state.
+func workosConfirmPasswordReset(e *core.RequestEvent, collection *core.Collection, form *recordConfirmPasswordResetForm) error {
+	err := validation.ValidateStruct(form,
+		validation.Field(&form.Token, validation.Required),
+		validation.Field(&form.Password, validation.Required, validation.Length(8, 255)),
+		validation.Field(&form.PasswordConfirm, validation.Required, validation.By(validators.Equal(form.Password))),
+	)
+	if err != nil {
+		return firstApiError(err, e.BadRequestError("An error occurred while validating the submitted data.", err))
+	}
+
+	wUser, err := workosClientFromApp(e.App).ConfirmPasswordReset(e.Request.Context(), form.Token, form.Password)
+	if err != nil {
+		return e.BadRequestError("Invalid or expired password reset token.", err)
+	}
+
+	// best-effort sync of the local record state
+	if wUser.Email != "" {
+		record, err := e.App.FindAuthRecordByEmail(collection, wUser.Email)
+		if err == nil {
+			var needUpdate bool
+
+			if wUser.EmailVerified && !record.Verified() {
+				needUpdate = true
+				record.SetVerified(true)
+			}
+
+			if collection.Fields.GetByName("workosUserId") != nil && record.GetString("workosUserId") != wUser.Id {
+				needUpdate = true
+				record.Set("workosUserId", wUser.Id)
+			}
+
+			if needUpdate {
+				if err = e.App.Save(record); err != nil {
+					e.App.Logger().Error("Failed to sync record after WorkOS password reset", "error", err, "recordId", record.Id)
+				}
+			}
+		}
+	}
+
+	return e.NoContent(http.StatusNoContent)
 }
 
 // -------------------------------------------------------------------

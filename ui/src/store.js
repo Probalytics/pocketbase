@@ -102,6 +102,11 @@ window.app.store = store({
                 icon: "ri-time-line",
                 label: "Crons",
             },
+            {
+                href: "#/settings/workos",
+                icon: "ri-shield-keyhole-line",
+                label: "WorkOS auth",
+            },
         ],
         Sync: [
             {

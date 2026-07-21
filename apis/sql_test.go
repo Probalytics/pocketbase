@@ -136,7 +136,11 @@ func TestSQLRun(t *testing.T) {
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				`"execTime":`,
-				`"affectedRows":0`,
+				// note: don't assert a specific affectedRows value for DDL
+				// statements - SQLite's connection change counter is not
+				// reset by them and reports the last row-changing statement
+				// (e.g. from the applied system migrations)
+				`"affectedRows":`,
 				`"columns":[]`,
 				`"rows":[]`,
 			},
