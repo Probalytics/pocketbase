@@ -49,6 +49,7 @@ func NewRouter(app core.App) (*router.Router[*core.RequestEvent], error) {
 	bindRealtimeApi(app, apiGroup)
 	bindHealthApi(app, apiGroup)
 	bindSQLApi(app, apiGroup)
+	bindMarketingApi(app, apiGroup)
 
 	// UI routes
 	bindUIExtensions(app)

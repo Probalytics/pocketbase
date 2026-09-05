@@ -145,6 +145,7 @@ type BaseApp struct {
 	onMailerRecordEmailChangeSend   *hook.Hook[*MailerRecordEvent]
 	onMailerRecordOTPSend           *hook.Hook[*MailerRecordEvent]
 	onMailerRecordAuthAlertSend     *hook.Hook[*MailerRecordEvent]
+	onMailerMarketingSend           *hook.Hook[*MailerMarketingEvent]
 
 	// realtime api event hooks
 	onRealtimeConnectRequest   *hook.Hook[*RealtimeConnectRequestEvent]
@@ -227,6 +228,7 @@ func NewBaseApp(config BaseAppConfig) *BaseApp {
 
 	app.initHooks()
 	app.registerBaseHooks()
+	app.registerMarketingHooks()
 
 	return app
 }
@@ -293,6 +295,7 @@ func (app *BaseApp) initHooks() {
 	app.onMailerRecordEmailChangeSend = &hook.Hook[*MailerRecordEvent]{}
 	app.onMailerRecordOTPSend = &hook.Hook[*MailerRecordEvent]{}
 	app.onMailerRecordAuthAlertSend = &hook.Hook[*MailerRecordEvent]{}
+	app.onMailerMarketingSend = &hook.Hook[*MailerMarketingEvent]{}
 
 	// realtime API event hooks
 	app.onRealtimeConnectRequest = &hook.Hook[*RealtimeConnectRequestEvent]{}
@@ -1014,6 +1017,10 @@ func (app *BaseApp) OnMailerRecordOTPSend(tags ...string) *hook.TaggedHook[*Mail
 
 func (app *BaseApp) OnMailerRecordAuthAlertSend(tags ...string) *hook.TaggedHook[*MailerRecordEvent] {
 	return hook.NewTaggedHook(app.onMailerRecordAuthAlertSend, tags...)
+}
+
+func (app *BaseApp) OnMailerMarketingSend() *hook.Hook[*MailerMarketingEvent] {
+	return app.onMailerMarketingSend
 }
 
 // -------------------------------------------------------------------

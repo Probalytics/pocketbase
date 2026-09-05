@@ -15,6 +15,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/mailer"
 	"github.com/pocketbase/pocketbase/tools/store"
 	"github.com/pocketbase/pocketbase/tools/subscriptions"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // App defines the main PocketBase app interface.
@@ -656,6 +657,15 @@ type App interface {
 	// CountRecords returns the total number of records in a collection.
 	CountRecords(collectionModelOrIdentifier any, exprs ...dbx.Expression) (int64, error)
 
+	// CountRecordsByFilter returns the number of records matching the provided filter.
+	//
+	// NB! Use the last params argument to bind untrusted user variables!
+	CountRecordsByFilter(
+		collectionModelOrIdentifier any,
+		filter string,
+		params ...dbx.Params,
+	) (int64, error)
+
 	// FindAuthRecordByToken finds the auth record associated with the provided JWT
 	// (auth, file, verifyEmail, changeEmail, passwordReset types).
 	//
@@ -1225,6 +1235,32 @@ type App interface {
 	// then all event handlers registered via the created hook will be
 	// triggered and called only if their event data origin matches the tags.
 	OnMailerRecordAuthAlertSend(tags ...string) *hook.TaggedHook[*MailerRecordEvent]
+
+	// OnMailerMarketingSend hook is triggered right before a queued
+	// marketing message is handed to the mailer, allowing you to
+	// intercept, customize or cancel the email that is being sent.
+	OnMailerMarketingSend() *hook.Hook[*MailerMarketingEvent]
+
+	// SendCampaign expands the campaign audience into the send queue.
+	SendCampaign(campaign *Record) error
+
+	// CampaignAudience resolves the collection and filter a campaign targets.
+	CampaignAudience(campaign *Record) (collection string, filter string)
+
+	// ScheduleCampaign marks a campaign to be sent at a later time.
+	ScheduleCampaign(campaign *Record, at types.DateTime) error
+
+	// CancelCampaign stops a campaign and drops its still-queued messages.
+	CancelCampaign(campaign *Record) error
+
+	// SendTestEmail delivers a one-off copy of the campaign to the given address.
+	SendTestEmail(campaign *Record, to string, sample *Record) error
+
+	// SendDirectEmail queues and delivers a single ad-hoc email to a contact.
+	SendDirectEmail(to, subject, body string, record *Record) error
+
+	// RenderCampaign resolves a campaign's subject and body for previewing.
+	RenderCampaign(campaign *Record, sample *Record) (subject string, html string)
 
 	// OnMailerBeforeRecordResetPasswordSend hook is triggered when
 	// sending a password reset email to an auth record, allowing

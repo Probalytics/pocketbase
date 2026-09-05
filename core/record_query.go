@@ -457,6 +457,45 @@ func (app *BaseApp) FindFirstRecordByFilter(
 	return result[0], nil
 }
 
+// CountRecordsByFilter returns the number of records matching the provided filter.
+//
+// NB! Use the last params argument to bind untrusted user variables!
+//
+// Example:
+//
+//	app.CountRecordsByFilter("posts", "status={:status}", dbx.Params{"status": "public"})
+func (app *BaseApp) CountRecordsByFilter(
+	collectionModelOrIdentifier any,
+	filter string,
+	params ...dbx.Params,
+) (int64, error) {
+	collection, err := getCollectionByModelOrIdentifier(app, collectionModelOrIdentifier)
+	if err != nil {
+		return 0, err
+	}
+
+	q := app.RecordQuery(collection).Select("COUNT(*)").OrderBy()
+
+	resolver := NewRecordFieldResolver(app, collection, nil, true)
+
+	if filter != "" {
+		expr, err := search.FilterData(filter).BuildExpr(resolver, params...)
+		if err != nil {
+			return 0, fmt.Errorf("invalid filter expression: %w", err)
+		}
+		q.AndWhere(expr)
+	}
+
+	if err := resolver.UpdateQuery(q); err != nil {
+		return 0, err
+	}
+
+	var total int64
+	err = q.Row(&total)
+
+	return total, err
+}
+
 // CountRecords returns the total number of records in a collection.
 func (app *BaseApp) CountRecords(collectionModelOrIdentifier any, exprs ...dbx.Expression) (int64, error) {
 	var total int64

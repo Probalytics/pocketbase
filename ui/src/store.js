@@ -63,6 +63,12 @@ window.app.store = store({
             label: "Collections",
         },
         {
+            href: "#/crm/contacts",
+            icon: "ri-contacts-book-2-line",
+            label: "CRM",
+            isActive: () => app.utils.isActivePath("#/crm", false),
+        },
+        {
             href: "#/logs",
             icon: "ri-bar-chart-box-line",
             label: "Logs",
@@ -86,6 +92,11 @@ window.app.store = store({
                 href: "#/settings/mail",
                 icon: "ri-send-plane-2-line",
                 label: "Mail settings",
+            },
+            {
+                href: "#/settings/marketing",
+                icon: "ri-mail-star-line",
+                label: "Marketing",
             },
             {
                 href: "#/settings/storage",

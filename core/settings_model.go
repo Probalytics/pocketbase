@@ -132,6 +132,7 @@ type settings struct {
 	TrustedProxy TrustedProxyConfig `form:"trustedProxy" json:"trustedProxy"`
 	Batch        BatchConfig        `form:"batch" json:"batch"`
 	Logs         LogsConfig         `form:"logs" json:"logs"`
+	Marketing    MarketingConfig    `form:"marketing" json:"marketing"`
 }
 
 // Settings defines the PocketBase app settings.
@@ -157,6 +158,13 @@ func newDefaultSettings() *Settings {
 			Logs: LogsConfig{
 				MaxDays: 5,
 				LogIP:   true,
+			},
+			Marketing: MarketingConfig{
+				RatePerMinute:   120,
+				MaxAttempts:     3,
+				TrackOpens:      true,
+				TrackClicks:     true,
+				UnsubscribeText: "Unsubscribe",
 			},
 			SMTP: SMTPConfig{
 				Enabled:  false,
@@ -300,6 +308,7 @@ func (s *Settings) PostValidate(ctx context.Context, app App) error {
 		validation.Field(&s.Batch),
 		validation.Field(&s.RateLimits),
 		validation.Field(&s.TrustedProxy),
+		validation.Field(&s.Marketing),
 	)
 }
 
@@ -341,11 +350,13 @@ func (s *Settings) MarshalJSON() ([]byte, error) {
 	s.mu.RUnlock()
 
 	copy.SMTP.hidePassword = true
+	copy.Marketing.IMAP.hidePassword = true
 
 	sensitiveFields := []*string{
 		&copy.SMTP.Password,
 		&copy.S3.Secret,
 		&copy.Backups.S3.Secret,
+		&copy.Marketing.IMAP.Password,
 	}
 
 	// mask all sensitive fields
